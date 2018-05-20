@@ -1,11 +1,10 @@
-## Visualight
+## Visualight - A Sonoff LED Visualizer
 
-The Sonoff-Tasmota based firmware for ESP8266 devices to control audio/video visualizations via an external Python application with Home Assistant integration.
-
-## A Sonoff LED Visualizer
 A general ESP8266/Sonoff controller for WS2812/SK6812 LED Strips that has a range of FX but can also be driven externally with both Audio Visualizer and Backlighting features (simple Ambilight/Hyperion functionality).
 It has a PC based GUI as well as an MQTT interface for the visualizer, and a set of controls for Home Assistant as well.
 Multiple LED Strip clients can be driven by the single visualizer.  The visualizer renders for a defined set of virtual pixels which are remapped into the actual number of LED pixels per-strip.
+
+The Sonoff-Tasmota based firmware for ESP8266 devices to control audio/video visualizations via an external Python application and Home Assistant integration.
 
 I just made this for my own entertainment, with a lot of experimentation and learning along the way.  If it's useful to you, great!
 
