@@ -276,6 +276,10 @@ struct SYSCFG {
   char          mems[RULES_MAX_MEMS][10];  // 7CE
   char          rules[MAX_RULE_SIZE];      // 800 uses 512 bytes in v5.12.0m
 
+
+  char          mqtt_light_fx_topic[33];   // A00
+  uint8_t       light_fx_enabled;
+
                                            // A00 - FFF free locations
 } Settings;
 

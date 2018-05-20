@@ -56,11 +56,11 @@
 enum LightCommands {
   CMND_COLOR, CMND_COLORTEMPERATURE, CMND_DIMMER, CMND_LED, CMND_LEDTABLE, CMND_FADE,
   CMND_PIXELS, CMND_ROTATION, CMND_SCHEME, CMND_SPEED, CMND_WAKEUP, CMND_WAKEUPDURATION,
-  CMND_WIDTH, CMND_CHANNEL, CMND_HSBCOLOR, CMND_UNDOCA };
+  CMND_WIDTH, CMND_CHANNEL, CMND_HSBCOLOR, CMND_FX_DEVICE, CMND_FX_ENABLE, CMND_UNDOCA };
 const char kLightCommands[] PROGMEM =
   D_CMND_COLOR "|" D_CMND_COLORTEMPERATURE "|" D_CMND_DIMMER "|" D_CMND_LED "|" D_CMND_LEDTABLE "|" D_CMND_FADE "|"
   D_CMND_PIXELS "|" D_CMND_ROTATION "|" D_CMND_SCHEME "|" D_CMND_SPEED "|" D_CMND_WAKEUP "|" D_CMND_WAKEUPDURATION "|"
-  D_CMND_WIDTH "|" D_CMND_CHANNEL "|" D_CMND_HSBCOLOR "|UNDOCA" ;
+  D_CMND_WIDTH "|" D_CMND_CHANNEL "|" D_CMND_HSBCOLOR "|" D_CMND_FX_DEVICE "|" D_CMND_FX_ENABLE "|UNDOCA" ;
 
 struct LRgbColor {
   uint8_t R, G, B;
@@ -1129,6 +1129,22 @@ boolean LightCommand()
       }
     }
     snprintf_P(mqtt_data, sizeof(mqtt_data), S_JSON_COMMAND_INDEX_SVALUE, command, XdrvMailbox.index, Ws2812GetColor(XdrvMailbox.index, scolor));
+  }
+  else if ((CMND_FX_ENABLE == command_code) && (LT_WS2812 == light_type)) {
+    if ((XdrvMailbox.payload > 0) && (XdrvMailbox.payload <= 1)) {
+      Settings.light_fx_enabled = XdrvMailbox.payload;
+      Ws2812Clear();
+      light_update = 1;
+    }
+    snprintf_P(mqtt_data, sizeof(mqtt_data), S_JSON_COMMAND_NVALUE, command, Settings.light_fx_enabled);
+  }
+  else if (CMND_FX_DEVICE == command_code) {
+    if ((XdrvMailbox.data_len > 0) && (XdrvMailbox.data_len < sizeof(Settings.mqtt_light_fx_topic ))) {
+      MakeValidMqtt(0, XdrvMailbox.data);
+      if (!strcmp(XdrvMailbox.data, mqtt_client)) XdrvMailbox.payload = 1;
+      strlcpy(Settings.mqtt_light_fx_topic, (!strcmp(XdrvMailbox.data,"0")) ? "" : (1 == XdrvMailbox.payload) ? mqtt_topic : XdrvMailbox.data, sizeof(Settings.mqtt_light_fx_topic));
+    }
+    snprintf_P(mqtt_data, sizeof(mqtt_data), S_JSON_COMMAND_SVALUE, command, Settings.mqtt_light_fx_topic);
   }
   else if ((CMND_PIXELS == command_code) && (LT_WS2812 == light_type)) {
     if ((XdrvMailbox.payload > 0) && (XdrvMailbox.payload <= WS2812_MAX_LEDS)) {

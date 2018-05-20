@@ -2474,6 +2474,9 @@ void setup()
 
 void loop()
 {
+  if ( SpecialAudioMode() )
+    return;
+
   XdrvCall(FUNC_LOOP);
 
   OsWatchLoop();

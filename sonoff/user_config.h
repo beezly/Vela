@@ -109,6 +109,15 @@
 #define MQTT_GRPTOPIC          "sonoffs"         // [GroupTopic] MQTT Group topic
 #define MQTT_CLIENT_ID         "DVES_%06X"       // [MqttClient] Also fall back topic using Chip Id = last 6 characters of MAC address
 
+
+#define MQTT_VISUALIZER_PREFIX    "visualizer"      // ala "cmnd/visualizer/[device]/lights/[name]/ip" - change this if you want to split out multiple controllers (pc's running the visualizer software)
+#define MQTT_LIGHTS_TOPIC         "lights"          // the lights topic for registering strips - leave this alone
+#define MQTT_LIGHTS_IP_TOPIC      "ip"              // the ip topic for registering strips - leave this alone
+#define MQTT_LIGHTS_STATE_TOPIC   "state"           // the state topic for registering strips - leave this alone
+#define MQTT_AUDIO_MODE_TOPIC     "cmnd/audio/mode" // on its way to deprecation?
+#define MQTT_LIGHT_FX_TOPIC       "monitor"         // Set this to the visualizer 'device' you want to register to - so each visualizer (noted as visualizer above) can have multiple devices - ie, this topic
+#define AUDIO_TIMEOUT             15                // If we don't receive any signal from the visualizer for this long, abort and go back normal operation (restore web server, mqtt)
+
 // -- MQTT - Telemetry ----------------------------
 #define TELE_PERIOD            300               // [TelePeriod] Telemetry (0 = disable, 10 - 3600 seconds)
 
@@ -302,8 +311,8 @@
   #define USE_IR_RECEIVE                         // Support for IR receiver (+5k5 code, 264 iram)
 
 #define USE_WS2812                               // WS2812 Led string using library NeoPixelBus (+5k code, +1k mem, 232 iram) - Disable by //
-  #define USE_WS2812_CTYPE     NEO_GRB           // WS2812 Color type (NEO_RGB, NEO_GRB, NEO_BRG, NEO_RBG, NEO_RGBW, NEO_GRBW)
-//  #define USE_WS2812_DMA                         // DMA supports only GPIO03 (= Serial RXD) (+1k mem). When USE_WS2812_DMA is enabled expect Exceptions on Pow
+  #define USE_WS2812_CTYPE      NEO_GRBW         //NEO_GRB <-ws2812//NEO_GRBW //<-SK6812           // WS2812 Color type (NEO_RGB, NEO_GRB, NEO_BRG, NEO_RBG, NEO_RGBW, NEO_GRBW)
+  #define USE_WS2812_DMA                         // DMA supports only GPIO03 (= Serial RXD) (+1k mem). When USE_WS2812_DMA is enabled expect Exceptions on Pow
 
 #define USE_ARILUX_RF                            // Add support for Arilux RF remote controller (+0k8 code, 252 iram (non 2.3.0))
 

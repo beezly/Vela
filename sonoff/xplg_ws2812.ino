@@ -24,6 +24,14 @@
 
 #include <NeoPixelBus.h>
 
+#include <WiFiUdp.h>
+
+WiFiUDP AudioPortUdp;
+
+#define BUFFER_LEN 2048
+IPAddress multicast_ip(225,255,255,240);
+uint32_t multicast_port = 7777;          // Multicast address and port
+
 #ifdef USE_WS2812_DMA
 #if (USE_WS2812_CTYPE == NEO_GRB)
   NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> *strip = NULL;
@@ -62,6 +70,32 @@ struct ColorScheme {
   WsColor* colors;
   uint8_t count;
 };
+
+bool bUDPConnected;
+uint16_t localPort = 7777;
+char packetBuffer[BUFFER_LEN];
+uint64_t nLastDisconnect = 0;
+
+//debugging
+uint16_t fpsCounter = 0;
+uint32_t secondTimer = 0;
+uint8_t missedPackets = 0;
+uint32_t flushedPackets = 0;
+uint8_t audio_disabled_watchdog = 0;
+
+bool bEverythingDisabled = false;
+
+uint8_t nMaxPixels = 1;
+uint8_t nHeapProblems = 0;
+
+uint8_t nDebugLevel = 0;
+
+#if (USE_WS2812_CTYPE > NEO_3LED)
+  RgbwColor cDefault;
+#else
+  RgbColor cDefault;
+#endif
+
 
 WsColor kIncandescent[2] = { 255,140,20, 0,0,0 };
 WsColor kRgb[3] = { 255,0,0, 0,255,0, 0,0,255 };
@@ -144,6 +178,403 @@ void Ws2812UpdatePixelColor(int position, struct WsColor hand_color, float offse
   color.G = cmin(color.G + ((hand_color.green / dimmer) * offset), 255);
   color.B = cmin(color.B + ((hand_color.blue / dimmer) * offset), 255);
   strip->SetPixelColor(mod_position, color);
+}
+
+/********************************************************************************************/
+// In theory this could prevent bug which causes tcp memory leaks in heap
+struct tcp_pcb;
+extern struct tcp_pcb* tcp_tw_pcbs;
+extern "C" void tcp_abort (struct tcp_pcb* pcb);
+
+void tcpCleanup (void) {
+  while (tcp_tw_pcbs)
+    tcp_abort(tcp_tw_pcbs);
+}
+
+void RegisterAudioStrip( bool bAvailable )
+{
+  Serial.print( bAvailable?"Registering LED Strip at IP : ":"Unregistering LED Strip at IP : " );
+  Serial.println( WiFi.localIP().toString().c_str() );
+  if ( bAvailable )
+  {
+    char stopic[TOPSZ];
+    snprintf_P(stopic, sizeof(stopic), PSTR( "%s/%s/%s/%s/%s/%s"), PUB_PREFIX, MQTT_VISUALIZER_PREFIX, Settings.mqtt_light_fx_topic, MQTT_LIGHTS_TOPIC, Settings.mqtt_topic, MQTT_LIGHTS_IP_TOPIC );
+    Serial.println( stopic );
+    MqttClient.publish(stopic, WiFi.localIP().toString().c_str(), false );//bAvailable?"on":"off", true );
+  }
+  else
+  {
+    char stopic[TOPSZ];
+    snprintf_P(stopic, sizeof(stopic), PSTR( "%s/%s/%s/%s/%s/%s"), PUB_PREFIX, MQTT_VISUALIZER_PREFIX, Settings.mqtt_light_fx_topic, MQTT_LIGHTS_TOPIC, Settings.mqtt_topic, MQTT_LIGHTS_STATE_TOPIC );
+    Serial.println( stopic );
+    MqttClient.publish(stopic, "off", false );//bAvailable?"on":"off", true );
+    if ( Settings.light_fx_enabled > 0 )
+    {
+      Settings.light_fx_enabled = 0;
+      char command[33];
+      snprintf_P(command, sizeof(command), PSTR(D_CMND_FX_ENABLE " off"));
+      ExecuteCommand( command );
+    }
+    for ( int i = 0; i < (int)Settings.light_pixels; i++ )
+    {
+      strip->SetPixelColor( i, cDefault );
+    }
+    strip->Show();
+  }
+}
+
+
+bool EnterUDPMode()
+{
+  if ( !bEverythingDisabled )
+  {
+    cDefault = strip->GetPixelColor(1);
+    Serial.println( "Registering LED Strip with Audio Server");
+    RegisterAudioStrip( true );
+    delay( 500 );
+    if ( MqttIsConnected() )
+    {
+      Serial.println( "Disabling MQTT" );
+      MqttDisconnect();
+    }
+#ifdef USE_WEBSERVER
+    if ( Settings.webserver )
+    {
+      Serial.println( "Disabling WebServer" );
+      StopWebserver();
+    }
+#endif
+    tcpCleanup();
+    delay( 500 );
+    ConnectUDP();
+    bEverythingDisabled = true;
+  }
+}
+
+bool ExitUDPMode()
+{
+  AudioPortUdp.stop();
+  if ( bEverythingDisabled )
+  {
+    tcpCleanup();
+    DisconnectUDP();
+    Serial.println( "Reconnecting MQTT" );
+    MqttReconnect();
+#ifdef USE_WEBSERVER
+    if (Settings.webserver)
+    {
+      Serial.println( "Reconnecting WebServer" );
+      StartWebserver(Settings.webserver, WiFi.localIP());
+    }
+#endif
+    delay( 2000 );
+    Serial.println( "Unregistering LED Strip with Audio Server");
+    RegisterAudioStrip( false );
+    bEverythingDisabled = false;
+    delay( 1000 );
+    for ( int i = 0; i < (int)Settings.light_pixels; i++ )
+    {
+      strip->SetPixelColor( i, cDefault );
+    }
+    strip->Show();
+  }
+}
+
+bool SpecialAudioMode()
+{
+// Not sure exactly why, but bigbang crashes periodically using this code
+// DMA seems totally stable.  Some timing thing causes the WDT to kick in otherwise
+// and in the worse case permanently hangs.  So we'll require DMA mode for this.
+#ifdef USE_WS2812_DMA
+    // Make sure we're on wifi before we do anything.
+    if ( WL_CONNECTED == WiFi.status() && Settings.light_fx_enabled == 1 )
+    {
+      if ( bEverythingDisabled )
+      {
+        Ws2812Audio();
+        return true;
+      }
+      else
+      {
+        EnterUDPMode();
+      }
+    }
+    else
+    {
+      ExitUDPMode();
+    }
+#endif
+    return false;
+}
+
+boolean DisconnectUDP()
+{
+  if (bUDPConnected) {
+    Serial.println("Disconnecting UDP");
+    nLastDisconnect = millis();
+    AudioPortUdp.stopAll();
+    AddLog_P(LOG_LEVEL_DEBUG, PSTR(D_LOG_UPNP D_MULTICAST_DISABLED));
+    bUDPConnected = false;
+  }
+  return bUDPConnected;
+}
+
+boolean ConnectUDP()
+{
+  if (!bUDPConnected )
+  {
+    Serial.println("Connecting UDP");
+    //if (AudioPortUdp.beginMulticast(WiFi.localIP(), multicast_ip, multicast_port)) {
+    if (AudioPortUdp.begin(multicast_port)) {
+      AddLog_P(LOG_LEVEL_INFO, PSTR(D_LOG_UPNP D_MULTICAST_REJOINED));
+      bUDPConnected = true;
+    } else {
+      AddLog_P(LOG_LEVEL_INFO, PSTR(D_LOG_UPNP D_MULTICAST_JOIN_FAILED));
+      bUDPConnected = false;
+    }
+  }
+  return bUDPConnected;
+}
+
+void Ws2812RotateRight( int nPixels )
+{
+  strip->RotateRight( nPixels );
+  strip->Show();
+}
+
+void Ws2812RotateLeft( int nPixels )
+{
+  strip->RotateLeft( nPixels );
+  strip->Show();
+}
+
+void Ws2812Scroll()
+{
+  #if (USE_WS2812_CTYPE > 1)
+    RgbwColor c;
+    c.W = 0;
+  #else
+    RgbColor c;
+  #endif
+  c = strip->GetPixelColor( 0 );
+  strip->SetPixelColor(Settings.light_pixels / 2, c);
+  c = strip->GetPixelColor( Settings.light_pixels - 1 );
+  strip->SetPixelColor(Settings.light_pixels / 2 - 1, c);
+
+  strip->RotateRight( 2, Settings.light_pixels / 2, Settings.light_pixels - 1 );
+  strip->RotateLeft( 2, 0, Settings.light_pixels / 2 - 1 );
+  strip->Show();
+}
+
+void Ws2812AudioCommand( uint8_t R, uint8_t G, uint8_t B )
+{
+  char command[33];
+  if ( R != 0 )
+  {
+  	if ( R == 10 )
+  	{
+  		Serial.println( "Received UDP Exit - Disabling Audio Mode");
+  		snprintf_P(command, sizeof(command), PSTR(D_CMND_FX_ENABLE " 0"));
+      Settings.light_fx_enabled = 0;
+      ExitUDPMode();
+  	}
+  	else if ( R == 20 )
+  	{
+  		Serial.println( "Received UDP Power Off");
+  		snprintf_P(command, sizeof(command), PSTR(D_CMND_POWER " OFF"));
+  	}
+  	else if ( R == 21 )
+  	{
+  		Serial.println( "Received UDP Power On");
+  		snprintf_P(command, sizeof(command), PSTR(D_CMND_POWER " ON"));
+  	}
+  	else if ( R >= 30 && R <= 42 )
+  	{
+  		Serial.println( "Received UDP Scheme");
+      snprintf_P(command, sizeof(command), PSTR(D_CMND_FX_ENABLE " 0"));
+      ExecuteCommand( command );
+      snprintf_P(command, sizeof(command), PSTR(D_CMND_SCHEME " %c"), R);
+  		//snprintf_P(command, sizeof(command), PSTR(D_CMND_SCHEME " %d"), R );
+  	}
+  }
+  else if ( G != 0 )
+  {
+    Serial.print( "Received UDP Dimmer Value : " );
+    Serial.println( G );
+    snprintf_P(command, sizeof(command), PSTR(D_CMND_DIMMER " %d"), G );
+  }
+  else
+  {
+    nDebugLevel = B;
+    return;
+  }
+
+  ExecuteCommand( command );
+  return;
+}
+
+
+void Ws2812Audio()
+{
+  if ( !bUDPConnected )//&& nHeap > 2000 )
+  {
+    if ( !ConnectUDP() )
+      return;
+  }
+  //Serial.print( "1" );
+// Use the appropirate color type
+#if (USE_WS2812_CTYPE > 1)
+  RgbwColor c;
+  RgbwColor color;
+  c.W = 0;
+#else
+  RgbColor c;
+  RgbColor color;
+#endif
+
+  float flDimmer = (float)Settings.light_dimmer / 100.0f;
+
+  // With UDP and TCP stuff active (mqtt/webserver) heap leaked
+  // constantly.  Since we only do UDP while active, this is
+  // no longer a concern.
+  /*
+  if ( nDebugLevel > 127 )
+  {
+    int nHeap = system_get_free_heap_size();
+    Serial.print("Free heap:");
+    Serial.println(nHeap);
+    if ( nHeap < 10000 )
+    {
+      tcpCleanup();
+    }
+  }
+  */
+  // If we have a pixel packet, do stuff!
+  if ( AudioPortUdp.parsePacket() )
+  {
+    //Serial.print( "2" );
+    int len = AudioPortUdp.read(packetBuffer, BUFFER_LEN );
+
+    //Serial.print( "Length : " );
+    //Serial.println( len );
+
+    uint8 nPixel_count = len / 3;
+
+    if ( nPixel_count == 1 )
+    {
+      Ws2812AudioCommand( (uint8_t)packetBuffer[0], (uint8_t)packetBuffer[1], (uint8_t)packetBuffer[2] );
+      return;
+    }
+
+    nMaxPixels =  max( nMaxPixels, nPixel_count );
+    float flPixelWidth = ( (float)Settings.light_pixels / (float)nMaxPixels);
+    packetBuffer[len] = 0;
+    //strip->ClearTo(0); // Reset strip
+    if ( nDebugLevel > 191 )
+    {
+      Serial.print( "Got Packet : " );
+      Serial.println( len );
+    }
+
+    uint8_t N = 0;
+    for(int i = 0; i < len; i+=3)
+    {
+        //Serial.print( "3" );
+        if ( i + 2 > len )
+        {
+          Serial.println( "WTF!?!  Outside bounds of LED count!!" );
+          break;
+        }
+
+        // We try to establish the max pixels based on the last pixel
+        // we get sent, but for sanity checking, we max it with the pixels
+        // we're trying to set...
+        nMaxPixels = max( nMaxPixels, N );
+
+        // Fade out based on dimmer value
+        c.R = (uint8_t)(packetBuffer[i] * flDimmer);
+        c.G = (uint8_t)(packetBuffer[i+1] * flDimmer);
+        c.B = (uint8_t)(packetBuffer[i+2] * flDimmer);
+
+        // Interpolate across our real pixel count
+        int nStartPixel = ceil( N * flPixelWidth );
+        int nCurrentPixel = nStartPixel;
+        int nLastPixel = max( -1, (int)ceil( (N - 1) * flPixelWidth ) );
+#ifdef SPEED
+        strip->ClearTo( c, nStartPixel, nLastPixel );
+#else
+        // pct to lerp per pixel
+        float flPct = 1.0f / (float)max( 1, nStartPixel - nLastPixel );
+        float flT = 0.0f;
+        for ( int nCurrentPixel = nStartPixel; nCurrentPixel > nLastPixel; nCurrentPixel-- )
+        {
+          //Serial.print( nCurrentPixel );
+          color = color.LinearBlend( c, strip->GetPixelColor(max( 0, min( (int)Settings.light_pixels, nLastPixel ) ) ), flT );
+          strip->SetPixelColor( nCurrentPixel, color );
+          if ( nDebugLevel > 250 )
+          {
+            Serial.print( "Loop : " );
+            Serial.print( i );
+            Serial.print( " Pixel : " );
+            Serial.print( nCurrentPixel );
+            Serial.print( " Start Pixel : " );
+            Serial.print( nStartPixel );
+            Serial.print( " Last Pixel : " );
+            Serial.print( nLastPixel );
+            Serial.print( " Max Pixel : " );
+            Serial.print( nMaxPixels );
+            Serial.print( " flt : " );
+            Serial.print( flT );
+            Serial.print( " flPct : " );
+            Serial.print( flPct );
+            Serial.print( " Color : " );
+            Serial.print( color.R );
+            Serial.print( color.G );
+            Serial.println( color.B );
+          }
+          flT += flPct;
+        }
+#endif
+		    N++;
+        delay(0);
+    }
+    fpsCounter++;
+    //Serial.print( "Start " );
+    strip->Show();
+    //Serial.print( "End " );
+  }
+  delay(0);
+
+  if (millis() - secondTimer >= 1000U)
+  {
+      //Serial.print( "7" );
+      // feed the watchdog
+      OsWatchLoop();
+      //Serial.print( "8" );
+      secondTimer = millis();
+
+      if ( nDebugLevel > 15 )
+      {
+        Serial.print("FPS: " );
+        Serial.println( fpsCounter );
+      }
+      if ( fpsCounter == 0 )
+      {
+        audio_disabled_watchdog++;
+      }
+      else
+      {
+        audio_disabled_watchdog = 0;
+      }
+      // If we haven't gotten anything for AUDIO_TIMEOUT seconds, just abort.
+      if ( audio_disabled_watchdog > AUDIO_TIMEOUT )
+      {
+        ExitUDPMode();
+        audio_disabled_watchdog = 0;
+      }
+      fpsCounter = 0;
+
+  }
 }
 
 void Ws2812UpdateHand(int position, uint8_t index)
@@ -340,6 +771,12 @@ void Ws2812Init()
 
 void Ws2812Clear()
 {
+  nMaxPixels = 1;
+  if ( bUDPConnected )
+  {
+    Serial.println("Disconnecting UDP");
+    DisconnectUDP();
+  }
   strip->ClearTo(0);
   strip->Show();
   ws_show_next = 1;
