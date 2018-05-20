@@ -28,10 +28,16 @@ Could I have just used a seperate pi here for the strips doing backlighting and 
 
 ## Original sources
 This stuff is 90% the work of the original authors, I just crammed them all together and added some functionality and features here and there.
+
+
 [Tasmota Firmware](https://github.com/arendst/Sonoff-Tasmota)
+
 [Original Audio Reactive LEDs](https://github.com/scottlawsonbc/audio-reactive-led-strip)
+
 [Systematic LEDs Fork](https://github.com/not-matt/Systematic-LEDs)
+
 [Screengrabbing](https://nicholastsmith.wordpress.com/2017/08/10/poe-ai-part-4-real-time-screen-capture-and-plumbing)
+
 
 ## Caveats
 I've seen a problem where it seems like UDP messages get queued and the strip falls behind.  Try lowering your framerate in this scenario.  Mine seemed to happen above 60 regularly.
@@ -48,8 +54,12 @@ More reactive and non-reactive FX.
 Investigate higher performance screen grabbing techniques.
 
 ## Installation
+
+
 [Please refer to Tasmota Here for the firmware](https://github.com/arendst/Sonoff-Tasmota)
+
 [For the LED strips, please refer to these instructions regarding installation](https://github.com/scottlawsonbc/audio-reactive-led-strip)
+
 
 The Home Assistant directory contains configuration entries to control the visualizer.  The mqtt entries should be fixed to reflect both the device name of your visualizer and the name of your sonoff.
 
