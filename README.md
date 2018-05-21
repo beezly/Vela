@@ -69,35 +69,13 @@ Investigate higher performance screen grabbing techniques.
 
 [Home Assistant](https://www.home-assistant.io/)
 
-The Home Assistant directory contains configuration entries to control the visualizer.  The mqtt entries should be fixed to reflect both the device name of your visualizer and the name of your sonoff.
 
-The quick version is as follows :
+## Setup
 
 Install the firmware onto your Sonoff or ESP8266 devices which are wired into a WS2812B or SK6812 LED Strip as normal.
 
-The MQTT hierarchy used for the various elements is as follows:
-
-```
-cmnd/[visualizer]/[instance]/effect/color
-cmnd/[visualizer]/[instance]/lights/[sonoff_mqtt_name]/state
-```
-
-Where the Visualizer element is the specific python application that controls one or more Instance.
-Each Instance controls one or more LED strips, which each have their own sonoff name.
-Each Instance shares all the effect settings across all strips it owns.
-However, you can have multiple instances per visualizer, and multiple visualizers, provided they're all uniquely named.
-
-
-Decide on a name for each seperate instance you want.  The default is "monitor".  Each sonoff will subscribe to a specific instance.
-
-You may change this in the Sonoff Console with:
-
-```
-fxdevice [name]
-```
-
-Download Anaconda 3.6 or latest
-open an Anaconda prompt
+The easiest Python setup from scracth is to download Anaconda 3.6 or latest.
+Open an Anaconda prompt and enter the following to install everything you'll need :
 
 ```
 conda create -n visualizer
@@ -107,10 +85,37 @@ pip install paho-mqtt
 pip install pyaudio
 ```
 
+The MQTT hierarchy used for the various elements is as follows:
+
+```
+cmnd/[visualizer]/[device]/effect/color
+cmnd/[visualizer]/[device]/lights/[sonoff_mqtt_name]/state
+```
+
+Where the Visualizer element is the specific python application that controls one or more instance device.
+Each instance device controls one or more LED strips, which each have their own sonoff name.
+Each Instance shares all the effect settings across all strips it owns.
+So you can have multiple sonoff strips per instance, multiple instances per visualizer, and multiple visualizers, provided they're all uniquely named.
+
+
+Pick a name for each seperate instance you want.  The default is "monitor".  
+
+Each sonoff will subscribe to a specific instance, and you may change this in the Sonoff Console with:
+
+```
+fxdevice [name]
+```
+
 Edit the config.py file to reflect the name of each "device" visualizer you want.  Again the default is "monitor".
 Edit the mqtt address to be your broker.
-cd to the directory you've installed the python to and run:
+
+The Home Assistant directory contains configuration entries to control the visualizer.  The mqtt entries should be fixed to reflect both the device name of your visualizer and the name of your sonoff.
+
+Whenever you'd like to run this now or in the future, open an Anaconda Prompt and d to the directory you've installed the python to and run:
+
 ```
+activate visualizer
+cd [my visualizer install directory]
 python main.py
 ```
 
