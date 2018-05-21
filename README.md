@@ -67,6 +67,7 @@ Investigate higher performance screen grabbing techniques.
 
 [For the LED strips, please refer to these instructions regarding installation](https://github.com/scottlawsonbc/audio-reactive-led-strip)
 
+[Home Assistant](https://www.home-assistant.io/)
 
 The Home Assistant directory contains configuration entries to control the visualizer.  The mqtt entries should be fixed to reflect both the device name of your visualizer and the name of your sonoff.
 
