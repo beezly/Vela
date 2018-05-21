@@ -69,6 +69,8 @@ Investigate higher performance screen grabbing techniques.
 
 [Home Assistant](https://www.home-assistant.io/)
 
+[Anaconda](https://www.anaconda.com/download/) or [Conda](https://conda.io/docs/user-guide/install/index.html)
+
 
 ## Setup
 
