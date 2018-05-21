@@ -75,7 +75,21 @@ The quick version is as follows :
 
 Install the firmware onto your Sonoff or ESP8266 devices which are wired into a WS2812B or SK6812 LED Strip as normal.
 
-Decide on a name for each seperate visualizer you want.  The default is "monitor".
+The MQTT hierarchy used for the various elements is as follows:
+
+```
+cmnd/[visualizer]/[instance]/effect/color
+cmnd/[visualizer]/[instance]/lights/[sonoff_mqtt_name]/state
+```
+
+Where the Visualizer element is the specific python application that controls one or more Instance.
+Each Instance controls one or more LED strips, which each have their own sonoff name.
+Each Instance shares all the effect settings across all strips it owns.
+However, you can have multiple instances per visualizer, and multiple visualizers, provided they're all uniquely named.
+
+
+Decide on a name for each seperate instance you want.  The default is "monitor".  Each sonoff will subscribe to a specific instance.
+
 You may change this in the Sonoff Console with:
 
 ```
