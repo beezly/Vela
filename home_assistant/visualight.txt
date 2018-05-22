@@ -943,7 +943,7 @@ automation:
     hide_entity: True
     trigger:
       platform: mqtt
-      topic: "stat/visualizer/ESP8266/effect/quality"
+      topic: "stat/visualizer/monitor/effect/quality"
     action:
        service: input_select.select_option
        data_template:
@@ -959,5 +959,5 @@ automation:
     action:
       service: mqtt.publish
       data_template:
-        topic: "cmnd/visualizer/ESP8266/effect/quality"
+        topic: "cmnd/visualizer/monitor/effect/quality"
         payload: "{{ states('input_select.led_fx_capture_quality') }}"
