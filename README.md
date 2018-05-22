@@ -12,10 +12,11 @@ The Sonoff-Tasmota based firmware for ESP8266 devices to control audio/video vis
 I just made this for my own entertainment, with a lot of experimentation and learning along the way.  If it's useful to you, great!
 
 
-<img src="https://github.com/scottlawsonbc/audio-reactive-led-strip/blob/master/images/description-cropped.gif" height="500" align="center" />
-
 
 ## How it works
+<img src="https://github.com/scottlawsonbc/audio-reactive-led-strip/blob/master/images/description-cropped.gif" width="480" align="right" />
+
+<img src="https://github.com/rando-calrissian/Visualight/blob/development/images/backlight.gif" width="480" align="right" />
 Generally speaking your light strip works just like you were using an LED Strip with Tasmota normally.  You have Home Assistant options for the brightness and scheme, but you also have a seperate FX Controller.
 When the light is put into the External FX mode, it will stop being driven locally and start being driven by the visualizer over a UDP connection.  From here, everything is driven by the FX visualizer.
 Strips can be opted in/out of control here, but their normal controls will stop working while opted in.  Music fed in via mic or audio loopback can be visualized, as can the screen border colors of the machine running the visualization.
