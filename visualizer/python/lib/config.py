@@ -51,6 +51,15 @@ settings = {                                                      # All settings
                      "MQTT_EFFECT_B_TOPIC":             "blue",                               # Blue Multiplier
                      "MQTT_EFFECT_FREQUENCY_MIN_TOPIC": "frequency_min",                      # Minimum Frequency
                      "MQTT_EFFECT_FREQUENCY_MAX_TOPIC": "frequency_max",                      # Maximum Frequency
+                     "MQTT_EFFECT_COLOR_LOWS_TOPIC":    "lows_color",                         # Scroll Lows Color
+                     "MQTT_EFFECT_COLOR_MIDS_TOPIC":    "mids_color",                         # Scroll Mids Color
+                     "MQTT_EFFECT_COLOR_HIGH_TOPIC":    "high_color",                         # Scorll High Color 
+                     "MQTT_EFFECT_CAPTURE_FPS_TOPIC":   "capturefps",                         # Visualight Capture FPS
+                     "MQTT_EFFECT_CONTRAST_TOPIC":      "contrast",                           # Visualight Contrast
+                     "MQTT_EFFECT_SATURATION_TOPIC":    "saturation",                         # Visualight Saturation
+                     "MQTT_EFFECT_REVERSE_TOPIC":       "reverse",                            # Reverse Effect
+                     "MQTT_EFFECT_FLIP_LR_TOPIC":       "flip_lr",                            # Flip L/R
+                     "MQTT_EFFECT_QUALITY_TOPIC":       "quality",                            # Capture Quality
                      "MQTT_ENABLE_PAYLOAD_ON":  "on",                                         # Payload for enabling audio mode
                      "MQTT_ENABLE_PAYLOAD_OFF": "off",                                        # Payload for disabling audio mode
                      "MQTT_AVAILABLE_LIGHTS_ARRAY_TOPIC": "/lights/",                         # LED Strips opt into audio mode via this topic via IP topic and available/unavailable payload
@@ -109,7 +118,7 @@ settings = {                                                      # All settings
                                                    "color_mode": "Spectral",        # Colour gradient to display
                                                    "mirror": False,                 # Reflect output down centre of strip
                                                    "reverse_grad": False,           # Flip (LR) gradient
-                                                   "reverse_roll": False,           # Reverse movement of gradient roll
+                                                   "reverse": False,         	    # Reverse movement of gradient roll
                                                    "blur": 3.0,                     # Amount of blur to apply
                                                    "flip_lr":False},                # Flip output left-right
                                      "Scroll":    {"sensitivity": 2.0,              # Sensitivity of the effect
@@ -135,7 +144,7 @@ settings = {                                                      # All settings
                                                    "color_mode":"Spectral",         # Multicolour mode to use
                                                    "roll_speed":0,                  # How fast (if at all) to cycle colour colours across strip
                                                    "mirror": False,                 # Mirror down centre of strip
-                                                   "reverse_roll": False,           # Reverse movement of gradient roll
+                                                   "reverse": False,        	    # Reverse movement of gradient roll
                                                    "flip_lr":False},                # Flip output left-right
                                      "Pulse":     {"sensitivity": 0.125,            # Sensitivity of the effect
                                                    "color_mode":"Spectral"          # Multicolour mode to use
@@ -243,6 +252,15 @@ settings = {                                                      # All settings
                       "color"           : "MQTT_EFFECT_COLOR_TOPIC",
                       "flash_color"     : "MQTT_EFFECT_COLOR_FLASH_TOPIC",
                       "color_mode"      : "MQTT_EFFECT_PALETTE_TOPIC",
+                      "lows_color"      : "MQTT_EFFECT_COLOR_LOWS_TOPIC",
+                      "mids_color"      : "MQTT_EFFECT_COLOR_MIDS_TOPIC",
+                      "high_color"      : "MQTT_EFFECT_COLOR_HIGH_TOPIC",
+                      "capturefps"      : "MQTT_EFFECT_CAPTURE_FPS_TOPIC",
+                      "contrast"        : "MQTT_EFFECT_CONTRAST_TOPIC",
+                      "saturation"      : "MQTT_EFFECT_SATURATION_TOPIC",
+                      "reverse"         : "MQTT_EFFECT_REVERSE_TOPIC",
+                      "flip_lr"         : "MQTT_EFFECT_FLIP_LR_TOPIC",
+                      "quality"         : "MQTT_EFFECT_QUALITY_TOPIC",
                       },
     
     #mapping of setting to scale
@@ -268,6 +286,15 @@ settings = {                                                      # All settings
                       "color"           : None,
                       "flash_color"     : None,
                       "color_mode"      : None,
+                      "lows_color"      : None,
+                      "mids_color"      : None,
+                      "high_color"      : None,
+                      "capturefps"      : 1,
+                      "contrast"        : 1000,
+                      "saturation"      : 1000,
+                      "reverse"         : 1,
+                      "flip_lr"         : 1,
+                      "quality"         : None,
                       }
 
 }

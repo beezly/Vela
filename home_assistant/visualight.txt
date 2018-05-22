@@ -11,8 +11,6 @@ group:
       - switch.led_strip_fx_switch
       - input_select.led_fx_mode
       - input_select.led_fx_palette
-      - input_select.led_fx_color
-      - input_select.led_fx_color_flash
       - input_boolean.bool_fx_mirror
       - input_number.slider_fx_frequency_min
       - input_number.slider_fx_frequency_max
@@ -24,6 +22,18 @@ group:
       - input_number.slider_fx_r_multiplier
       - input_number.slider_fx_g_multiplier
       - input_number.slider_fx_b_multiplier
+      - input_select.led_fx_color
+      - input_select.led_fx_color_flash
+      - input_select.led_fx_color_low
+      - input_select.led_fx_color_mid
+      - input_select.led_fx_color_high
+      - input_select.led_fx_capture_quality
+      - input_boolean.bool_fx_flip
+      - input_boolean.bool_fx_reverse
+      - input_number.slider_fx_capturefps
+      - input_number.slider_fx_contrast
+      - input_number.slider_fx_saturation
+
 
 light:
   - platform: mqtt
@@ -69,6 +79,14 @@ light:
     payload_off: "OFF"
 
 
+# There really should be a better way to template these options which are repeated.
+# Perhaps through a python script component or the set options service for input_select
+# This didn't work, although I expect it should :
+#    sequence:
+#      - service: input_select.set_options
+#        data_template:
+#          entity_id: input_select.led_fx_color_flash
+#          options: '{{ states.input_select.led_fx_color.attributes.options }}'
 
 input_select:
   led_fx_palette:
@@ -139,6 +157,84 @@ input_select:
       - "Pale Green"
       - "Forest Green"  
     icon: mdi:eyedropper
+  led_fx_color_low:
+    name: Scroll Low Color
+    options:
+      - "Red"
+      - "Coral"
+      - "Orange"
+      - "Yellow"
+      - "Gold"
+      - "Yellow Green"
+      - "Green"
+      - "Cyan"
+      - "Turquoise"
+      - "Blue"
+      - "Light Blue"
+      - "Sky Blue"
+      - "Mauve"
+      - "Purple"
+      - "Pink"
+      - "Blossom"
+      - "Rose"
+      - "White"
+      - "Peach"
+      - "Spring Green"
+      - "Pale Green"
+      - "Forest Green"  
+    icon: mdi:eyedropper
+  led_fx_color_mid:
+    name: Scroll Mid Color
+    options:
+      - "Red"
+      - "Coral"
+      - "Orange"
+      - "Yellow"
+      - "Gold"
+      - "Yellow Green"
+      - "Green"
+      - "Cyan"
+      - "Turquoise"
+      - "Blue"
+      - "Light Blue"
+      - "Sky Blue"
+      - "Mauve"
+      - "Purple"
+      - "Pink"
+      - "Blossom"
+      - "Rose"
+      - "White"
+      - "Peach"
+      - "Spring Green"
+      - "Pale Green"
+      - "Forest Green"  
+    icon: mdi:eyedropper
+  led_fx_color_high:
+    name: Scroll High Color
+    options:
+      - "Red"
+      - "Coral"
+      - "Orange"
+      - "Yellow"
+      - "Gold"
+      - "Yellow Green"
+      - "Green"
+      - "Cyan"
+      - "Turquoise"
+      - "Blue"
+      - "Light Blue"
+      - "Sky Blue"
+      - "Mauve"
+      - "Purple"
+      - "Pink"
+      - "Blossom"
+      - "Rose"
+      - "White"
+      - "Peach"
+      - "Spring Green"
+      - "Pale Green"
+      - "Forest Green"  
+    icon: mdi:eyedropper
   led_fx_mode:
     name: FX Mode
     options:
@@ -157,12 +253,27 @@ input_select:
       - 'Gradient'
       - 'Calibration'
     icon: mdi:theme-light-dark
-	
+  led_fx_capture_quality:
+    name: Capture Scaling Quality
+    options:
+      - 'Nearest'
+      - 'Bilinear' 
+      - 'Hamming'
+      - 'Bicubic'
+      - 'Lanczos'
+    icon: mdi:theme-light-dark
+
 input_boolean:
   bool_fx_mirror:
     name: LED FX Mirror
     initial: on
-	
+  bool_fx_reverse:
+    name: LED FX Reverse
+    initial: on
+  bool_fx_flip:
+    name: LED FX Flip L/R
+    initial: on
+
 input_number:
   slider_fx_frequency_min:
     name: "Frequency Min"
@@ -223,9 +334,26 @@ input_number:
     #initial: 1.0
     min: 0.01
     max: 1.0
-    step: 0.01      
-	
-	
+    step: 0.01     
+  slider_fx_contrast:
+    name: "Contrast"
+    #initial: 1.0
+    min: 0.01
+    max: 10.0
+    step: 0.01     
+  slider_fx_saturation:
+    name: "Saturation"
+    #initial: 1.0
+    min: 0.01
+    max: 4.0
+    step: 0.01
+  slider_fx_capturefps:
+    name: "Capture FPS"
+    #initial: 1.0
+    min: 1
+    max: 60
+    step: 1
+
 
 switch:
   - platform: mqtt
@@ -247,7 +375,7 @@ switch:
 
 
 
-	
+
 automation:
   - alias: Activate LED Strip 1
     initial_state: 'on'
@@ -619,3 +747,217 @@ automation:
       data_template:
         topic: "cmnd/visualizer/monitor/effect/blue"
         payload: "{{ ( trigger.to_state.state | float  * 1000 ) | int }}"     
+
+  - alias: Set LED FX Saturation Selector
+    initial_state: 'on'
+    hide_entity: True
+    trigger:
+      platform: mqtt
+      topic: "stat/visualizer/monitor/effect/saturation"
+    action:
+       service: input_number.set_value
+       data_template:
+        entity_id: input_number.slider_fx_saturation
+        value: "{{ ( trigger.payload | float / 1000.0 ) | float }}"
+   
+  - alias: Set LED FX Saturation
+    initial_state: 'on'
+    hide_entity: True
+    trigger:
+      platform: state
+      entity_id: input_number.slider_fx_saturation
+    action:
+      service: mqtt.publish
+      data_template:
+        topic: "cmnd/visualizer/monitor/effect/saturation"
+        payload: "{{ ( trigger.to_state.state | float  * 1000 ) | int }}"     
+
+  - alias: Set LED FX Contrast Selector
+    initial_state: 'on'
+    hide_entity: True
+    trigger:
+      platform: mqtt
+      topic: "stat/visualizer/monitor/effect/contrast"
+    action:
+       service: input_number.set_value
+       data_template:
+        entity_id: input_number.slider_fx_contrast
+        value: "{{ ( trigger.payload | float / 1000.0 ) | float }}"
+   
+  - alias: Set LED FX Contrast
+    initial_state: 'on'
+    hide_entity: True
+    trigger:
+      platform: state
+      entity_id: input_number.slider_fx_contrast
+    action:
+      service: mqtt.publish
+      data_template:
+        topic: "cmnd/visualizer/monitor/effect/contrast"
+        payload: "{{ ( trigger.to_state.state | float  * 1000 ) | int }}"     
+
+  - alias: Set LED FX Capture FPS Selector
+    initial_state: 'on'
+    hide_entity: True
+    trigger:
+      platform: mqtt
+      topic: "stat/visualizer/monitor/effect/capturefps"
+    action:
+       service: input_number.set_value
+       data_template:
+        entity_id: input_number.slider_fx_capturefps
+        value: "{{ trigger.payload | int }}"
+   
+  - alias: Set LED FX Capture FPS
+    initial_state: 'on'
+    hide_entity: True
+    trigger:
+      platform: state
+      entity_id: input_number.slider_fx_capturefps
+    action:
+      service: mqtt.publish
+      data_template:
+        topic: "cmnd/visualizer/monitor/effect/capturefps"
+        payload: "{{ trigger.to_state.state | int }}"   
+
+  - alias: Set LED FX Reverse Selector
+    initial_state: 'on'
+    hide_entity: True
+    trigger:
+      platform: mqtt
+      topic: "stat/visualizer/monitor/effect/reverse"
+    action:
+       service_template: "{% if trigger.payload == '1' %}input_boolean.turn_on{% else %}input_boolean.turn_off{% endif %}"
+       data_template:
+        entity_id: input_boolean.bool_fx_reverse
+
+  - alias: Set LED FX Reverse
+    initial_state: 'on'
+    hide_entity: True
+    trigger:
+      platform: state
+      entity_id: input_boolean.bool_fx_reverse
+    action:
+      service: mqtt.publish
+      data_template:
+        topic: "cmnd/visualizer/monitor/effect/reverse"
+        payload: "{% if states('input_boolean.bool_fx_reverse') == 'on' %}1{% else %}0{% endif %}"
+
+  - alias: Set LED FX Flip L/R Selector
+    initial_state: 'on'
+    hide_entity: True
+    trigger:
+      platform: mqtt
+      topic: "stat/visualizer/monitor/effect/flip_lr"
+    action:
+       service_template: "{% if trigger.payload == '1' %}input_boolean.turn_on{% else %}input_boolean.turn_off{% endif %}"
+       data_template:
+        entity_id: input_boolean.bool_fx_flip
+
+  - alias: Set LED FX Flip L/R
+    initial_state: 'on'
+    hide_entity: True
+    trigger:
+      platform: state
+      entity_id: input_boolean.bool_fx_flip
+    action:
+      service: mqtt.publish
+      data_template:
+        topic: "cmnd/visualizer/monitor/effect/flip_lr"
+        payload: "{% if states('input_boolean.bool_fx_flip') == 'on' %}1{% else %}0{% endif %}"
+
+  - alias: Set LED FX Color Low Selector
+    initial_state: 'on'
+    hide_entity: True
+    trigger:
+      platform: mqtt
+      topic: "stat/visualizer/monitor/effect/lows_color"
+    action:
+       service: input_select.select_option
+       data_template:
+        entity_id: input_select.led_fx_color_low
+        option: "{{ trigger.payload }}"
+  
+  - alias: Set LED FX Color Low
+    initial_state: 'on'
+    hide_entity: True
+    trigger:
+      platform: state
+      entity_id: input_select.led_fx_color_low
+    action:
+      service: mqtt.publish
+      data_template:
+        topic: "cmnd/visualizer/monitor/effect/lows_color"
+        payload: "{{ states('input_select.led_fx_color_low') }}"
+
+  - alias: Set LED FX Color Mid Selector
+    initial_state: 'on'
+    hide_entity: True
+    trigger:
+      platform: mqtt
+      topic: "stat/visualizer/monitor/effect/mids_color"
+    action:
+       service: input_select.select_option
+       data_template:
+        entity_id: input_select.led_fx_color_mid
+        option: "{{ trigger.payload }}"
+  
+  - alias: Set LED FX Color Mid
+    initial_state: 'on'
+    hide_entity: True
+    trigger:
+      platform: state
+      entity_id: input_select.led_fx_color_mid
+    action:
+      service: mqtt.publish
+      data_template:
+        topic: "cmnd/visualizer/monitor/effect/mids_color"
+        payload: "{{ states('input_select.led_fx_color_mid') }}"
+
+  - alias: Set LED FX Color High Selector
+    initial_state: 'on'
+    hide_entity: True
+    trigger:
+      platform: mqtt
+      topic: "stat/visualizer/monitor/effect/high_color"
+    action:
+       service: input_select.select_option
+       data_template:
+        entity_id: input_select.led_fx_color_high
+        option: "{{ trigger.payload }}"
+  
+  - alias: Set LED FX Color High
+    initial_state: 'on'
+    hide_entity: True
+    trigger:
+      platform: state
+      entity_id: input_select.led_fx_color_high
+    action:
+      service: mqtt.publish
+      data_template:
+        topic: "cmnd/visualizer/monitor/effect/high_color"
+        payload: "{{ states('input_select.led_fx_color_high') }}"
+
+  - alias: Set LED FX Capture Quality Selector
+    initial_state: 'on'
+    hide_entity: True
+    trigger:
+      platform: mqtt
+      topic: "stat/visualizer/ESP8266/effect/quality"
+    action:
+       service: input_select.select_option
+       data_template:
+        entity_id: input_select.led_fx_capture_quality
+        option: "{{ trigger.payload }}"
+  
+  - alias: Set LED FX Capture Quality
+    initial_state: 'on'
+    hide_entity: True
+    trigger:
+      platform: state
+      entity_id: input_select.led_fx_capture_quality
+    action:
+      service: mqtt.publish
+      data_template:
+        topic: "cmnd/visualizer/ESP8266/effect/quality"
+        payload: "{{ states('input_select.led_fx_capture_quality') }}"

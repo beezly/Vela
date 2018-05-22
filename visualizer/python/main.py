@@ -279,6 +279,16 @@ def update_mqtt_setting_status( client ):
     update_effect_setting( client, board, "color" )
     update_effect_setting( client, board, "flash_color" )
     update_effect_setting( client, board, "color_mode" )
+    update_effect_setting( client, board, "reverse" )
+    update_effect_setting( client, board, "flip_lr" )
+    update_effect_setting( client, board, "lows_color" )
+    update_effect_setting( client, board, "mids_color" )
+    update_effect_setting( client, board, "high_color" )
+    update_effect_setting( client, board, "saturation" )
+    update_effect_setting( client, board, "contrast" )
+    update_effect_setting( client, board, "capturefps" )
+    update_effect_setting( client, board, "quality" )
+    
     
 
 def initialize_mqtt():
@@ -440,7 +450,7 @@ class Visualizer():
                                                  ["blur", "Blur", "float_slider", (0.1,4.0,0.1)],
                                                  ["mirror", "Mirror", "checkbox"],
                                                  ["reverse_grad", "Reverse Gradient", "checkbox"],
-                                                 ["reverse_roll", "Reverse Roll", "checkbox"],
+                                                 ["reverse", "Reverse Roll", "checkbox"],
                                                  ["flip_lr", "Flip LR", "checkbox"]],
                                        "Scroll":[["sensitivity", "Sensitivity", "float_slider", (0.1,4.0,0.1)],
                                                  ["lows_color", "Lows Color", "dropdown", config.settings["colors"]],
@@ -463,7 +473,7 @@ class Visualizer():
                                                  ["roll_speed", "Roll Speed", "float_slider", (0,8,0.0005)],
                                                  ["flip_lr", "Flip LR", "checkbox"],
                                                  ["mirror", "Mirror", "checkbox"],
-                                                 ["reverse_roll", "Reverse Roll", "checkbox"]],
+                                                 ["reverse", "Reverse Roll", "checkbox"]],
                                         "Pulse":[["sensitivity", "Sensitivity", "float_slider", (0.1,4.0,0.1)],
                                                  ["color_mode", "Color Mode", "dropdown", config.settings["gradients"]]],
                                    "Visualight":[["blur", "Blur", "float_slider", (0.1,4.0,0.1)],
@@ -759,7 +769,7 @@ class Visualizer():
                                     (None if config.settings["devices"][self.board]["effect_opts"]["Wavelength"]["reverse_grad"] else config.settings["devices"][self.board]["configuration"]["N_PIXELS"]):]*r])
         #self.prev_spectrum = y
         global current_roll
-        current_roll += config.settings["devices"][self.board]["effect_opts"]["Wavelength"]["roll_speed"]*(-1 if config.settings["devices"][self.board]["effect_opts"]["Wavelength"]["reverse_roll"] else 1)
+        current_roll += config.settings["devices"][self.board]["effect_opts"]["Wavelength"]["roll_speed"]*(-1 if config.settings["devices"][self.board]["effect_opts"]["Wavelength"]["reverse"] else 1)
         truncated_roll = int( current_roll )
         current_roll -= truncated_roll
         self.multicolor_modes[config.settings["devices"][self.board]["effect_opts"]["Wavelength"]["color_mode"]] = np.roll(
@@ -870,7 +880,7 @@ class Visualizer():
                 output[j][n:n+m] = color_sets[i][j]*max_values[i]
             n += m
         global current_roll
-        current_roll += config.settings["devices"][self.board]["effect_opts"]["Bars"]["roll_speed"]*(-1 if config.settings["devices"][self.board]["effect_opts"]["Bars"]["reverse_roll"] else 1)
+        current_roll += config.settings["devices"][self.board]["effect_opts"]["Bars"]["roll_speed"]*(-1 if config.settings["devices"][self.board]["effect_opts"]["Bars"]["reverse"] else 1)
         truncated_roll = int( current_roll )
         current_roll -= truncated_roll
         self.multicolor_modes[config.settings["devices"][self.board]["effect_opts"]["Bars"]["color_mode"]] = np.roll(
