@@ -1,4 +1,7 @@
 ## Visualight - A Sonoff LED Visualizer
+<img src="https://github.com/rando-calrissian/Visualight/blob/development/images/hass.png" height="500" align="right" />
+
+<img src="https://github.com/rando-calrissian/Visualight/blob/development/images/gui.png" height="500" align="right" />
 
 A general ESP8266/Sonoff controller for WS2812/SK6812 LED Strips that has a range of FX but can also be driven externally with both Audio Visualizer and Backlighting features (simple Ambilight/Hyperion functionality).
 It has a PC based GUI as well as an MQTT interface for the visualizer, and a set of controls for Home Assistant as well.
@@ -7,6 +10,10 @@ Multiple LED Strip clients can be driven by the single visualizer.  The visualiz
 The Sonoff-Tasmota based firmware for ESP8266 devices to control audio/video visualizations via an external Python application and Home Assistant integration.
 
 I just made this for my own entertainment, with a lot of experimentation and learning along the way.  If it's useful to you, great!
+
+
+<img src="https://github.com/scottlawsonbc/audio-reactive-led-strip/blob/master/images/description-cropped.gif" height="500" align="center" />
+
 
 ## How it works
 Generally speaking your light strip works just like you were using an LED Strip with Tasmota normally.  You have Home Assistant options for the brightness and scheme, but you also have a seperate FX Controller.
@@ -30,13 +37,13 @@ Could I have just used a seperate pi here for the strips doing backlighting and 
 This stuff is 90% the work of the original authors, I just crammed them all together and added some functionality and features here and there.
 
 
-[Tasmota Firmware](https://github.com/arendst/Sonoff-Tasmota)
+[Tasmota Firmware](https://github.com/arendst/Sonoff-Tasmota) by Theo Arends
 
-[Original Audio Reactive LEDs](https://github.com/scottlawsonbc/audio-reactive-led-strip)
+[Original Audio Reactive LEDs](https://github.com/scottlawsonbc/audio-reactive-led-strip) by Scott Lawson
 
-[Systematic LEDs Fork](https://github.com/not-matt/Systematic-LEDs)
+[Systematic LEDs Fork](https://github.com/not-matt/Systematic-LEDs) by Matthew Bowley
 
-[Screengrabbing](https://nicholastsmith.wordpress.com/2017/08/10/poe-ai-part-4-real-time-screen-capture-and-plumbing)
+[Screen Capture](https://nicholastsmith.wordpress.com/2017/08/10/poe-ai-part-4-real-time-screen-capture-and-plumbing) by Nicholas T. Smith
 
 
 ## Caveats
@@ -60,32 +67,64 @@ Investigate higher performance screen grabbing techniques.
 
 [For the LED strips, please refer to these instructions regarding installation](https://github.com/scottlawsonbc/audio-reactive-led-strip)
 
+[Home Assistant](https://www.home-assistant.io/)
 
-The Home Assistant directory contains configuration entries to control the visualizer.  The mqtt entries should be fixed to reflect both the device name of your visualizer and the name of your sonoff.
+[Anaconda](https://www.anaconda.com/download/) or [Conda](https://conda.io/docs/user-guide/install/index.html)
 
-The quick version is as follows :
+
+## Setup
+
 Install the firmware onto your Sonoff or ESP8266 devices which are wired into a WS2812B or SK6812 LED Strip as normal.
 
-Decide on a name for each seperate visualizer you want.  The default is "monitor".
-You may change this in the Sonoff Console with:
-fxdevice [name]
+The easiest Python setup from scracth is to download Anaconda 3.6 or latest.
+Open an Anaconda prompt and enter the following to install everything you'll need :
 
-Download Anaconda 3.6 or latest
-open an Anaconda prompt
-
+```
 conda create -n visualizer
 activate visualizer
 conda install numpy scipy pyqtgraph
 pip install paho-mqtt
 pip install pyaudio
+```
+
+The MQTT hierarchy used for the various elements is as follows:
+
+```
+cmnd/[visualizer]/[device]/effect/color
+cmnd/[visualizer]/[device]/lights/[sonoff_mqtt_name]/state
+```
+
+Where the Visualizer element is the specific python application that controls one or more instance device.
+Each instance device controls one or more LED strips, which each have their own sonoff name.
+Each Instance shares all the effect settings across all strips it owns.
+So you can have multiple sonoff strips per instance, multiple instances per visualizer, and multiple visualizers, provided they're all uniquely named.
+
+
+Pick a name for each seperate instance you want.  The default is "monitor".  
+
+Each sonoff will subscribe to a specific instance, and you may change this in the Sonoff Console with:
+
+```
+fxdevice [name]
+```
 
 Edit the config.py file to reflect the name of each "device" visualizer you want.  Again the default is "monitor".
 Edit the mqtt address to be your broker.
-cd to the directory you've installed the python to and run:
+
+The Home Assistant directory contains configuration entries to control the visualizer.  The mqtt entries should be fixed to reflect both the device name of your visualizer and the name of your sonoff.
+
+Whenever you'd like to run this now or in the future, open an Anaconda Prompt and d to the directory you've installed the python to and run:
+
+```
+activate visualizer
+cd [my visualizer install directory]
 python main.py
+```
 
 Once the visualizer is running in the sonoff console type:
+```
 fxenable on
+```
 to start accepting input from the visualizer.
 
 The Home Assitant controls can be used to activate or deactive each strip and change settings.
