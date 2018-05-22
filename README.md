@@ -1,8 +1,7 @@
 ## Visualight - A Sonoff LED Visualizer
-<img src="https://github.com/rando-calrissian/Visualight/blob/development/images/hass.png" height="500" align="right" />
+<img src="https://github.com/scottlawsonbc/audio-reactive-led-strip/blob/master/images/description-cropped.gif" width="480" align="right" />
 
-<img src="https://github.com/rando-calrissian/Visualight/blob/development/images/gui.png" height="500" align="right" />
-
+<img src="https://github.com/rando-calrissian/Visualight/blob/development/images/backlight.gif" width="480" align="right" />
 A general ESP8266/Sonoff controller for WS2812/SK6812 LED Strips that has a range of FX but can also be driven externally with both Audio Visualizer and Backlighting features (simple Ambilight/Hyperion functionality).
 It has a PC based GUI as well as an MQTT interface for the visualizer, and a set of controls for Home Assistant as well.
 Multiple LED Strip clients can be driven by the single visualizer.  The visualizer renders for a defined set of virtual pixels which are remapped into the actual number of LED pixels per-strip.
@@ -14,9 +13,9 @@ I just made this for my own entertainment, with a lot of experimentation and lea
 
 
 ## How it works
-<img src="https://github.com/scottlawsonbc/audio-reactive-led-strip/blob/master/images/description-cropped.gif" width="480" align="right" />
+<img src="https://github.com/rando-calrissian/Visualight/blob/development/images/hass.png" height="500" align="right" />
 
-<img src="https://github.com/rando-calrissian/Visualight/blob/development/images/backlight.gif" width="480" align="right" />
+<img src="https://github.com/rando-calrissian/Visualight/blob/development/images/gui.png" height="500" align="right" />
 Generally speaking your light strip works just like you were using an LED Strip with Tasmota normally.  You have Home Assistant options for the brightness and scheme, but you also have a seperate FX Controller.
 When the light is put into the External FX mode, it will stop being driven locally and start being driven by the visualizer over a UDP connection.  From here, everything is driven by the FX visualizer.
 Strips can be opted in/out of control here, but their normal controls will stop working while opted in.  Music fed in via mic or audio loopback can be visualized, as can the screen border colors of the machine running the visualization.
