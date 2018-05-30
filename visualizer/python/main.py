@@ -10,6 +10,8 @@ import lib.microphone as microphone
 import lib.dsp as dsp
 import lib.melbank as melbank
 import lib.devices as devices
+import lib.mqtt as mqtt
+from lib.config import log
 import random
 import asyncio
 
@@ -29,326 +31,160 @@ from PIL import ImageChops
 #  gi.require_version('Gtk', '3.0')
 #  from gi.repository import Gtk.gdk
   
-import paho.mqtt.client as mqtt
 import win32gui
 import win32ui, win32con
 from threading import Thread, Lock
-
 from PyQt5.QtCore import QSettings
+
+
 if config.settings["configuration"]["USE_GUI"]:
     from lib.qrangeslider import QRangeSlider
     from lib.qfloatslider import QFloatSlider
     import pyqtgraph as pg
     from PyQt5.QtCore import *
     from PyQt5.QtWidgets import *
+    
+
+# Determine monitor status and send out over mqtt for automations
+#
+# from : https://stackoverflow.com/questions/48720924/python-3-detect-monitor-power-state-in-windows
+if ( config.settings["configuration"]["CHECK_DISPLAY"] ):
+  import win32api
+  from ctypes import POINTER, windll, Structure, cast, CFUNCTYPE, c_int, c_uint, c_void_p, c_bool
+  from comtypes import GUID
+  from ctypes.wintypes import HANDLE, DWORD
+
+  PBT_POWERSETTINGCHANGE = 0x8013
+  GUID_CONSOLE_DISPLAY_STATE = '{6FE69556-704A-47A0-8F24-C28D936FDA47}'
+  GUID_ACDC_POWER_SOURCE = '{5D3E9A59-E9D5-4B00-A6BD-FF34FF516548}'
+  GUID_BATTERY_PERCENTAGE_REMAINING = '{A7AD8041-B45A-4CAE-87A3-EECBB468A9E1}'
+  GUID_MONITOR_POWER_ON = '{02731015-4510-4526-99E6-E5A17EBD1AEA}'
+  GUID_SYSTEM_AWAYMODE = '{98A7F580-01F7-48AA-9C0F-44352C29E5C0}'
+
+
+class POWERBROADCAST_SETTING(Structure):
+    _fields_ = [("PowerSetting", GUID),
+                ("DataLength", DWORD),
+                ("Data", DWORD)]
+
+      
+class Display_Status():
+    def __init__(self):
+      if ( config.settings["configuration"]["CHECK_DISPLAY"] ):
+        log("*** DISPLAY STATUS STARTING ***")
+        hinst = win32api.GetModuleHandle(None)
+        wndclass = win32gui.WNDCLASS()
+        wndclass.hInstance = hinst
+        wndclass.lpszClassName = "testWindowClass"
+        CMPFUNC = CFUNCTYPE(c_bool, c_int, c_uint, c_uint, c_void_p)
+        wndproc_pointer = CMPFUNC(wndproc)
+        wndclass.lpfnWndProc = {win32con.WM_POWERBROADCAST : wndproc_pointer}
+        try:
+            myWindowClass = win32gui.RegisterClass(wndclass)
+            hwnd = win32gui.CreateWindowEx(win32con.WS_EX_LEFT,
+                                         myWindowClass, 
+                                         "testMsgWindow", 
+                                         0, 
+                                         0, 
+                                         0, 
+                                         win32con.CW_USEDEFAULT, 
+                                         win32con.CW_USEDEFAULT, 
+                                         0, 
+                                         0, 
+                                         hinst, 
+                                         None)
+        except Exception as e:
+            log("Exception: %s" % str(e))
+
+        if hwnd is None:
+            log("hwnd is none!")
+        else:
+            log("hwnd: %s" % hwnd)
+
+        guids_info = {
+                        'GUID_MONITOR_POWER_ON' : GUID_MONITOR_POWER_ON,
+                        'GUID_SYSTEM_AWAYMODE' : GUID_SYSTEM_AWAYMODE,
+                        'GUID_CONSOLE_DISPLAY_STATE' : GUID_CONSOLE_DISPLAY_STATE,
+                        'GUID_ACDC_POWER_SOURCE' : GUID_ACDC_POWER_SOURCE,
+                        'GUID_BATTERY_PERCENTAGE_REMAINING' : GUID_BATTERY_PERCENTAGE_REMAINING
+                     }
+        for name, guid_info in guids_info.items():
+            result = windll.user32.RegisterPowerSettingNotification(HANDLE(hwnd), GUID(guid_info), DWORD(0))
+            log(('registering', name))
+            log(('result:', hex(result)))
+            log(('lastError:', win32api.GetLastError()))
+
+        thrd = Thread(target = self.WinPumpMsg)
+        thrd.start()
+    
+    def WinPumpMsg( self ):
+      while True:
+        win32gui.PumpWaitingMessages()
+        time.sleep( 4 )
+        
+def wndproc(hwnd, msg, wparam, lparam):
+    if msg == win32con.WM_POWERBROADCAST:
+        if wparam == win32con.PBT_APMPOWERSTATUSCHANGE:
+            log('Power status has changed', 3 )
+        if wparam == win32con.PBT_APMRESUMEAUTOMATIC:
+            log('System resume', 3)
+        if wparam == win32con.PBT_APMRESUMESUSPEND:
+            log('System resume by user input', 3)
+        if wparam == win32con.PBT_APMSUSPEND:
+            log('System suspend', 3)
+            for board in config.settings["devices"]:
+              mqtt_topic = config.settings["configuration"]["MQTT_STAT_PREFIX"] + board + config.settings["configuration"]["MQTT_DISPLAY_TOPIC"]
+              mqtt_client.publish( mqtt_topic, config.settings["configuration"]["MQTT_MONITOR_PAYLOAD_OFF"] )
+        if wparam == PBT_POWERSETTINGCHANGE:
+            log('Power setting changed...', 3)
+            settings = cast(lparam, POINTER(POWERBROADCAST_SETTING)).contents
+            power_setting = str(settings.PowerSetting)
+            data_length = settings.DataLength
+            data = settings.Data
+            if power_setting == GUID_CONSOLE_DISPLAY_STATE:
+              for board in config.settings["devices"]:
+                  mqtt_topic = config.settings["configuration"]["MQTT_STAT_PREFIX"] + board + config.settings["configuration"]["MQTT_DISPLAY_TOPIC"]
+                  if data == 0: 
+                      log('Display off', 3)
+                      mqtt_client.publish( mqtt_topic, config.settings["configuration"]["MQTT_MONITOR_PAYLOAD_OFF"] )
+                  if data == 1: 
+                      log('Display on', 3)
+                      mqtt_client.publish( mqtt_topic, config.settings["configuration"]["MQTT_MONITOR_PAYLOAD_ON"] )
+                  if data == 2: 
+                      log('Display dimmed', 3)
+                      mqtt_client.publish( mqtt_topic, config.settings["configuration"]["MQTT_MONITOR_PAYLOAD_SUSPEND"] )
+            elif power_setting == GUID_ACDC_POWER_SOURCE:
+                if data == 0: log('AC power', 3)
+                if data == 1: log('Battery power', 3)
+                if data == 2: log('Short term power', 3)
+            elif power_setting == GUID_BATTERY_PERCENTAGE_REMAINING:
+                log('battery remaining: %s' % data, 3)
+            elif power_setting == GUID_MONITOR_POWER_ON:
+              for board in config.settings["devices"]:
+                  mqtt_topic = config.settings["configuration"]["MQTT_STAT_PREFIX"] + board + config.settings["configuration"]["MQTT_DISPLAY_TOPIC"]
+                  if data == 0:
+                      log('Monitor off', 3)
+                      mqtt_client.publish( mqtt_topic, config.settings["configuration"]["MQTT_MONITOR_PAYLOAD_OFF"] )
+                  if data == 1:
+                      log('Monitor on', 3)
+                      mqtt_client.publish( mqtt_topic, config.settings["configuration"]["MQTT_MONITOR_PAYLOAD_ON"] )
+            elif power_setting == GUID_SYSTEM_AWAYMODE:
+                if data == 0: log('Exiting away mode', 3)
+                if data == 1: log('Entering away mode', 3)
+            else:
+                log('unknown GUID', 3)
+        return True
+        
+    return False
 
 current_roll = 0.0;
 current_scroll = 0.0;
 
+dimmer = 0
+
 light_array = []
-enabled = False
 last_audio_enable_msg = 0
 
-def log( msg, log_level = 0 ):
-  if ( config.settings["configuration"]["LOG_LEVEL"] ) > log_level:
-    print( msg )
-
-def on_message(client, userdata, message):
-  log(message.topic+" "+str(message.qos)+" "+str(message.payload))
-  
-def on_message_light_array_ip(client, userdata, message):
-  # Add Requesting Lights into our UDP Array of IPs
-  # Strip off the parts we don't need and grab the bits we do
-  # stat/visualizer/[boardname]/lights/[name]/ip
-  while userdata:
-    pass
-  userdata = 1
-  msg = message.topic.replace( config.settings["configuration"]["MQTT_STAT_PREFIX"], "" )
-  entries = msg.split("/", 4)
-  board = entries[0]
-  stripname = entries[2]
-  ip =str(message.payload.decode("utf-8"))
-  log( "Received Message for " + board + " " + stripname + " IP : " + ip )
-  
-  if board in config.settings["devices"]:
-    if stripname in config.settings["devices"][board]["configuration"]["light_array"]:
-      ip =str(message.payload.decode("utf-8"))
-      log( "Changing " + stripname + " ip to :" + ip )
-      config.settings["devices"][board]["configuration"]["light_array"][stripname]["ip"] = ip
-    else:
-      new_light_array = { stripname:{ "ip":ip, "state":config.settings["configuration"]["MQTT_AVAILABLE_LIGHTS_STATE_PAYLOAD_AVAILABLE"]} }
-      current_light_array = config.settings["devices"][board]["configuration"]["light_array"]
-      config.settings["devices"][board]["configuration"]["light_array"] = {**current_light_array, **new_light_array}
-      log ( "New LED Strip added : " )
-      log ( new_light_array )
-      # + config.settings["devices"][board]["configuration"]["light_array"] )
-      mqtt_topic = config.settings["configuration"]["MQTT_STAT_PREFIX"] + board + config.settings["configuration"]["MQTT_AVAILABLE_LIGHTS_ARRAY_TOPIC"] + stripname + config.settings["configuration"]["MQTT_AVAILABLE_LIGHTS_STATE_TOPIC"]
-      #log( mqtt_topic )
-      #log( config.settings["configuration"]["MQTT_AVAILABLE_LIGHTS_STATE_PAYLOAD_AVAILABLE"] )
-      client.publish( mqtt_topic, config.settings["configuration"]["MQTT_AVAILABLE_LIGHTS_STATE_PAYLOAD_AVAILABLE"] )
-      update_mqtt_setting_status( client )
-  else:
-    log( "ERROR: No Board By the name : " + board )
-  userdata = 0
-
-def on_message_light_array_state(client, userdata, message):
-  while userdata:
-    pass
-  userdata = 1
-  # Strip off the parts we don't need and grab the bits we do
-  # stat/visualizer/[boardname]/lights/[name]/ip
-  msg = message.topic.replace( config.settings["configuration"]["MQTT_CMND_PREFIX"], "" )
-  entries = msg.split("/", 4)
-  board = entries[0]
-  stripname = entries[2]
-  availability = str(message.payload.decode("utf-8"))
-  log( "Received Message for " + board + " " + stripname + " State : " + availability )
-  
-  if board in config.settings["devices"]:
-    if stripname in config.settings["devices"][board]["configuration"]["light_array"]:
-      ip =str(message.payload.decode("utf-8"))
-      log( "Changing " + stripname + " state to :" + availability )
-      config.settings["devices"][board]["configuration"]["light_array"][stripname]["state"] = availability
-      if availability == config.settings["configuration"]["MQTT_AVAILABLE_LIGHTS_STATE_PAYLOAD_UNAVAILABLE"]:
-        log( 'Disabling LED Strip ' + stripname + ' and Removing IP ' + config.settings["devices"][board]["configuration"]["light_array"][stripname]["ip"] + ' from Array ' )
-        #log( config.settings["devices"][board]["configuration"]["light_array"] )
-        current_light_array = config.settings["devices"][board]["configuration"]["light_array"]
-        deleted_light_array = { stripname:{ "ip":current_light_array[stripname]["ip"], "state":config.settings["configuration"]["MQTT_AVAILABLE_LIGHTS_STATE_PAYLOAD_UNAVAILABLE"]} }
-        #send this command to only the one we want to delete.  I'm sure there's some smarter way to access the specific one directly, but whatev
-        config.settings["devices"][board]["configuration"]["light_array"] = deleted_light_array
-        #log( config.settings["devices"][board]["configuration"]["light_array"] ) 
-        pixels = np.array([[0 for i in range( 1 )] for i in range(3)])
-        pixels[0][0] = 10;
-        boards[board].show(pixels)
-        del current_light_array[stripname]
-        config.settings["devices"][board]["configuration"]["light_array"] = current_light_array
-        #log( config.settings["devices"][board]["configuration"]["light_array"] )
-      client.publish( config.settings["configuration"]["MQTT_STAT_PREFIX"] + msg, message.payload )
-    else:
-      log( "Received State Setting for as-yet unregistered LED Strip!" )
-  else:
-    log( "ERROR: No Board By the name : " + board )
-  userdata = 0
-
-def on_message_audio_enable(client, userdata, message):
-  global enabled
-  global last_audio_enable_msg
-  update_mqtt_setting_status( client )
-  last_audio_enable_msg = 0
-  audio_enable = min( 1, max( -1, int(message.payload.decode("utf-8"))))
-  log('Audio Mode Value Received :' + str( audio_enable ) )
-  msg = message.topic.replace( config.settings["configuration"]["MQTT_CMND_PREFIX"], "" )
-  client.publish( config.settings["configuration"]["MQTT_STAT_PREFIX"] + msg, message.payload )
-  if ( audio_enable is not -1 ):
-    enabled = audio_enable == 1
-    pixels = np.array([[0 for i in range( 1 )] for i in range(3)])
-    pixels[0][0] = audio_enable + 10;
-    for board in boards:
-      boards[board].show(pixels)
-
-
-def on_message_audio_effect(client, userdata, message):
-  # cmnd/visualizer/[boardname]/effect/[effectsetting]
-  msg = message.topic.replace( config.settings["configuration"]["MQTT_CMND_PREFIX"], "" )
-  entries = msg.split("/", 4)
-  board = entries[0]
-  topic = entries[2]
-  eff = config.settings["devices"][board]["configuration"]["current_effect"]
-  if config.settings["configuration"]["MQTT_EFFECT_MODE_TOPIC"] == topic:
-    # a bit of special handling for the effect mode...
-    if str(message.payload.decode("utf-8") ) in config.settings["devices"][board]["effect_opts"]:
-      config.settings["devices"][board]["configuration"]["current_effect"] = str(message.payload.decode("utf-8") )
-    else:
-      log('Effect Mode Not Found : ' + str(message.payload.decode("utf-8") ))
-  else:
-    for setting in config.settings["setting_topics"]:
-      if config.settings["configuration"][config.settings["setting_topics"][setting]] == topic:
-        if setting in config.settings["devices"][board]["effect_opts"][eff]:
-          log('Effect Value Received : ' + setting + " - " + str(message.payload.decode("utf-8")), 6 )
-          if config.settings["setting_scales"][setting] is not None:
-            value = round( int( message.payload.decode("utf-8") ) * float ( 1.0 / config.settings["setting_scales"][setting] ) , 3 ) 
-          else:
-            value = str( message.payload.decode("utf-8") )
-          config.settings["devices"][board]["effect_opts"][eff][setting] = value
-          client.publish( config.settings["configuration"]["MQTT_STAT_PREFIX"] + msg, message.payload )
-          if config.settings["configuration"]["USE_GUI"] and 'gui' in globals():
-            gui.update_ui_option( eff, setting, value ) 
-
-  
-def on_message_audio_effect_frequency_min(client, userdata, message):
-  log('Effect Frequency Min Value Received : ' + str(int(message.payload.decode("utf-8"))) )
-  msg = message.topic.replace( config.settings["configuration"]["MQTT_CMND_PREFIX"], "" )
-  entries = msg.split("/", 4)
-  board = entries[0]
-  config.settings["devices"][board]["configuration"]["MIN_FREQUENCY"] = int(message.payload.decode("utf-8"))
-  client.publish( config.settings["configuration"]["MQTT_STAT_PREFIX"] + msg, message.payload )
-  if config.settings["configuration"]["USE_GUI"] and 'gui' in globals():
-    gui.board_tabs_widgets[board]["freq_slider"].setRange(config.settings["devices"][board]["configuration"]["MIN_FREQUENCY"], config.settings["devices"][board]["configuration"]["MAX_FREQUENCY"])
-  
-def on_message_audio_effect_frequency_max(client, userdata, message):
-  log('Effect Frequency Max Value Received : ' + str(int(message.payload.decode("utf-8"))) )
-  msg = message.topic.replace( config.settings["configuration"]["MQTT_CMND_PREFIX"], "" )
-  entries = msg.split("/", 4)
-  board = entries[0]
-  config.settings["devices"][board]["configuration"]["MAX_FREQUENCY"] = int(message.payload.decode("utf-8"))
-  client.publish( config.settings["configuration"]["MQTT_STAT_PREFIX"] + msg, message.payload )
-  if config.settings["configuration"]["USE_GUI"] and 'gui' in globals():
-    gui.board_tabs_widgets[board]["freq_slider"].setRange(config.settings["devices"][board]["configuration"]["MIN_FREQUENCY"], config.settings["devices"][board]["configuration"]["MAX_FREQUENCY"])
-  
-  
-def on_message_audio_dimmer(client, userdata, message):
-  dimmer_value = min( 100, max( -1, int(message.payload.decode("utf-8"))))
-  log('Dimmer Value Received :' + str( dimmer_value ) )
-  if ( dimmer_value is not -1 ):
-    pixels = np.array([[0 for i in range( 1 )] for i in range(3)])
-    pixels[1][0] = dimmer_value;
-    for board in boards:
-      boards[board].show(pixels)
-
-def on_message_audio_debug(client, userdata, message):
-  debug_value = min( 255, max( -1, int(message.payload.decode("utf-8"))))
-  log('Debug Value Received :' + str( debug_value ) )
-  if ( debug_value is not -1 ):
-    pixels = np.array([[0 for i in range( 1 )] for i in range(3)])
-    pixels[2][0] = debug_value;
-    for board in boards:
-      boards[board].show(pixels)
-  
-def on_message_audio_power(client, userdata, message):
-  power_value = min( 1, max( -1, int(message.payload.decode("utf-8"))))
-  log('Power Value Received :' + str( power_value ) )
-  if ( power_value is not -1 ):
-    pixels = np.array([[0 for i in range( 1 )] for i in range(3)])
-    pixels[0][0] = power_value + 20;
-    for board in boards:
-      boards[board].show(pixels)
-
-def on_message_audio_scheme(client, userdata, message):
-  scheme_value = min( 12, max( -1, int(message.payload.decode("utf-8"))))
-  log('Scheme Value Received : ' + str( scheme_value ) )
-  if ( scheme_value is not -1 ):
-    pixels = np.array([[0 for i in range( 1 )] for i in range(3)])
-    pixels[0][0] = scheme_value + 30;
-    for board in boards:
-      boards[board].show(pixels)
-
-def update_effect_setting( client, board, setting ):
-    MQTT_STAT_Prefix = ( config.settings["configuration"]["MQTT_STAT_PREFIX"] + str( board ) )
-    effect = config.settings["devices"][board]["configuration"]["current_effect"]
-    if setting in config.settings["devices"][board]["effect_opts"][effect] and setting in config.settings["setting_topics"]:
-      topic = config.settings["setting_topics"][setting]
-      scalar = config.settings["setting_scales"][setting]
-      value = config.settings["devices"][board]["effect_opts"][effect][setting]
-      if scalar is not None:
-        value = int( value * scalar )
-      client.publish(MQTT_STAT_Prefix + config.settings["configuration"]["MQTT_EFFECT_BASE_TOPIC"] + config.settings["configuration"][topic], value )
-      
-def update_config_setting( client, board, setting ):
-    MQTT_STAT_Prefix = ( config.settings["configuration"]["MQTT_STAT_PREFIX"] + str( board ) )
-    if setting in config.settings["devices"][board]["configuration"] and setting in config.settings["setting_topics"]:
-      topic = config.settings["setting_topics"][setting]
-      scalar = config.settings["setting_scales"][setting]
-      value = config.settings["devices"][board]["configuration"][setting]
-      if scalar is not None:
-        value = int( value * scalar )
-      client.publish(MQTT_STAT_Prefix + config.settings["configuration"]["MQTT_EFFECT_BASE_TOPIC"] + config.settings["configuration"][topic], value )
-    
-def update_mqtt_setting_status( client ):
-  for board in config.settings["devices"]:
-    log( "Updating MQTT Settings for current mode", 6 )
-    update_config_setting( client, board, "current_effect" )
-    update_config_setting( client, board, "MIN_FREQUENCY" )
-    update_config_setting( client, board, "MAX_FREQUENCY" )
-    
-    update_effect_setting( client, board, "speed" )
-    update_effect_setting( client, board, "roll_speed" )
-    update_effect_setting( client, board, "blur" )
-    update_effect_setting( client, board, "decay" )
-    update_effect_setting( client, board, "mirror" )
-    update_effect_setting( client, board, "sensitivity" )
-    update_effect_setting( client, board, "r_multiplier" )
-    update_effect_setting( client, board, "g_multiplier" )
-    update_effect_setting( client, board, "b_multiplier" )
-    update_effect_setting( client, board, "r" )
-    update_effect_setting( client, board, "g" )
-    update_effect_setting( client, board, "b" )
-    update_effect_setting( client, board, "gamma_r" )
-    update_effect_setting( client, board, "gamma_g" )
-    update_effect_setting( client, board, "gamma_b" )
-    update_effect_setting( client, board, "color_mode" )
-    update_effect_setting( client, board, "color" )
-    update_effect_setting( client, board, "flash_color" )
-    update_effect_setting( client, board, "color_mode" )
-    update_effect_setting( client, board, "reverse" )
-    update_effect_setting( client, board, "flip_lr" )
-    update_effect_setting( client, board, "lows_color" )
-    update_effect_setting( client, board, "mids_color" )
-    update_effect_setting( client, board, "high_color" )
-    update_effect_setting( client, board, "saturation" )
-    update_effect_setting( client, board, "contrast" )
-    update_effect_setting( client, board, "capturefps" )
-    update_effect_setting( client, board, "quality" )
-    
-    
-
-def initialize_mqtt():
-    log( 'Initializing MQTT', 2 )
-    mqtt_mutex = 0
-    client = mqtt.Client( userdata=mqtt_mutex )
-    #client.max_inflight_messages_set(16)
-    client.connect( config.settings["configuration"]["MQTT_IP"], config.settings["configuration"]["MQTT_PORT"], 60)
-    client.loop_start()
-    
-    log ( 'Per Board Initialization' )
-    for board in config.settings["devices"]:
-      log( "Initializing Board " + str( board ), 2 )
-      MQTT_CMND_Prefix = ( config.settings["configuration"]["MQTT_CMND_PREFIX"] + str( board ) )
-      MQTT_STAT_Prefix = ( config.settings["configuration"]["MQTT_STAT_PREFIX"] + str( board ) )
-
-      client.on_message = on_message
-      client.message_callback_add(MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_EFFECT_BASE_TOPIC"] + "+", on_message_audio_effect)
-      log('Subscribing To Effects Topics : ' + MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_EFFECT_BASE_TOPIC"] + "+", 3 )
-      client.subscribe( MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_EFFECT_BASE_TOPIC"] + "+", 2 )
-
-      client.message_callback_add(MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_ENABLE_TOPIC"], on_message_audio_enable)
-      client.message_callback_add(MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_DIMMER_TOPIC"], on_message_audio_dimmer)
-      client.message_callback_add(MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_DEBUG_TOPIC"], on_message_audio_debug)
-      client.message_callback_add(MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_POWER_TOPIC"], on_message_audio_power)	
-      client.message_callback_add(MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_SCHEME_TOPIC"], on_message_audio_scheme)
-
-      client.message_callback_add(MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_EFFECT_BASE_TOPIC"] + config.settings["configuration"]["MQTT_EFFECT_FREQUENCY_MIN_TOPIC"], on_message_audio_effect_frequency_min)
-      client.message_callback_add(MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_EFFECT_BASE_TOPIC"] + config.settings["configuration"]["MQTT_EFFECT_FREQUENCY_MAX_TOPIC"], on_message_audio_effect_frequency_max)
-      
-      client.message_callback_add(MQTT_STAT_Prefix + config.settings["configuration"]["MQTT_AVAILABLE_LIGHTS_ARRAY_TOPIC"] + '+' + config.settings["configuration"]["MQTT_AVAILABLE_LIGHTS_IP_TOPIC"], on_message_light_array_ip )
-      client.message_callback_add(MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_AVAILABLE_LIGHTS_ARRAY_TOPIC"] + '+' + config.settings["configuration"]["MQTT_AVAILABLE_LIGHTS_STATE_TOPIC"], on_message_light_array_state )
-                
-      log('Subscribing To Light Mode : ' + MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_ENABLE_TOPIC"], 3 )
-      client.subscribe( MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_ENABLE_TOPIC"], 2 )
-      log('Subscribing To Dimmer : ' + MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_DIMMER_TOPIC"], 3 )
-      client.subscribe( MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_DIMMER_TOPIC"], 2 )
-      log('Subscribing To Debug : ' + MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_DEBUG_TOPIC"], 3 )
-      client.subscribe( MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_DEBUG_TOPIC"], 2 )
-      log('Subscribing To Power : ' + MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_POWER_TOPIC"], 3 )
-      client.subscribe( MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_POWER_TOPIC"], 2 )	  
-      log('Subscribing To Scheme : ' + MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_SCHEME_TOPIC"], 3 )
-      client.subscribe( MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_SCHEME_TOPIC"], 2 )	
-      log('Subscribing To Frequency Min : ' + MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_EFFECT_BASE_TOPIC"] + config.settings["configuration"]["MQTT_EFFECT_FREQUENCY_MIN_TOPIC"], 3 )
-      client.subscribe( MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_EFFECT_BASE_TOPIC"] + config.settings["configuration"]["MQTT_EFFECT_FREQUENCY_MIN_TOPIC"], 2 )
-      log('Subscribing To Frequency Max : ' + MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_EFFECT_BASE_TOPIC"] + config.settings["configuration"]["MQTT_EFFECT_FREQUENCY_MAX_TOPIC"], 3 )
-      client.subscribe( MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_EFFECT_BASE_TOPIC"] + config.settings["configuration"]["MQTT_EFFECT_FREQUENCY_MAX_TOPIC"], 2 )
-      
-      log('Subscribing To Light Array IP : ' + ( MQTT_STAT_Prefix + config.settings["configuration"]["MQTT_AVAILABLE_LIGHTS_ARRAY_TOPIC"] + '+' + config.settings["configuration"]["MQTT_AVAILABLE_LIGHTS_IP_TOPIC"]), 3 )
-      client.subscribe( ( MQTT_STAT_Prefix + config.settings["configuration"]["MQTT_AVAILABLE_LIGHTS_ARRAY_TOPIC"] + '+' + config.settings["configuration"]["MQTT_AVAILABLE_LIGHTS_IP_TOPIC"] ), 2 )
-      log('Subscribing To Light Array State : ' + ( MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_AVAILABLE_LIGHTS_ARRAY_TOPIC"] + '+' + config.settings["configuration"]["MQTT_AVAILABLE_LIGHTS_STATE_TOPIC"]), 3 )
-      client.subscribe( ( MQTT_CMND_Prefix + config.settings["configuration"]["MQTT_AVAILABLE_LIGHTS_ARRAY_TOPIC"] + '+' + config.settings["configuration"]["MQTT_AVAILABLE_LIGHTS_STATE_TOPIC"] ), 2 )
-      
-      update_mqtt_setting_status( client )
-      
-      log( "Board " + str( board ) + " Initialized", 3 )
-      
-    log( 'All MQTT Initialized', 3 )
-    return client
-      
 
 class Visualizer():
     def __init__(self, board):
@@ -508,17 +344,15 @@ class Visualizer():
         # Setup for "Power" (don't change these)
         self.power_indexes = []
         self.power_brightness = 0
-        # Setup for multicolour modes (don't mess with this either unless you want to add in your own multicolour modes)
-        # If there's a multicolour mode you would like to see, let me know on GitHub! 
-
-        #def _vect_easing_func_gen(slope=2.5, length=1):
-        #    return np.vectorize(_easing_func)
         
-        #Screen Grabbing for Visualight Visualizer
-        self.sv = ScreenViewer()
-        #Optionally this could take a specific window name - None is fullscreen
-        self.sv.GetHWND(None)
-
+        # pre-calculate the number of pixels for width/height of visualization.
+        # at 100 pixels with 16:9 screen, this would be 32 horizontal, 18 vertical per side
+        pixels = config.settings["devices"][self.board]["configuration"]["N_PIXELS"]
+        div = 1 / ((sv.w * 2) + (sv.h * 2)) 
+        #print ( "div : " + str( div ) )
+        self.pixel_w = int(pixels * ( div * sv.w ) )
+        self.pixel_h = int(pixels * ( div * sv.h ) )           
+        
             
         def _easing_func(x, length, slope=2.5):
             # returns a nice eased curve with defined length and curve
@@ -587,21 +421,23 @@ class Visualizer():
         
         #if we've changed effects, turn on/off screen grabbing as appropriate
         if effect is not self.prev_effect:
-          update_mqtt_setting_status( mqtt_client )
+          mqtt.update_mqtt_setting_status( mqtt_client )
           self.prev_effect = effect
-          if effect == "Visualight":
-            self.sv.Start()
-          else:
-            self.sv.Stop()
         
-        self.update_freq_channels(y)
-        self.detect_freqs()
+                
+        #time2 = time.time()
+        if config.uses_audio:
+          self.update_freq_channels(y)
+          self.detect_freqs()
+        #log( "Freq : " + str( time.time() - time2 ), 10 )
+        #time2 = time.time()
         if effect in self.non_reactive_effects:
             self.prev_output = self.effects[effect]()
         elif audio_input:
             self.prev_output = self.effects[effect](y)
         else:
             self.prev_output = np.multiply(self.prev_output, 0.95)
+        #log( "Vis : " + str( time.time() - time2 ), 10 )
         self.frame_counter += 1
         elapsed = time.time() - self.start_time
         if elapsed >= 1.0:
@@ -910,7 +746,7 @@ class Visualizer():
             self.power_brightness = 1.0
             # Generate random indexes
             self.power_indexes = random.sample(range(config.settings["devices"][self.board]["configuration"]["N_PIXELS"]), config.settings["devices"][self.board]["effect_opts"]["Power"]["s_count"])
-            #log("ye")
+
         # Assign colour to the random indexes
         for index in self.power_indexes:
             output[0, index] = int(config.settings["colors"][config.settings["devices"][self.board]["effect_opts"]["Power"]["color_flash"]][0]*self.power_brightness)
@@ -969,47 +805,58 @@ class Visualizer():
         return output
 
     def visualize_visualight(self, y):
-        "My version of ambilight"
+        """My version of ambilight"""
+        #time1 = time.time()
         if config.settings["devices"][self.board]["effect_opts"]["Visualight"]["capturefps"] != config.settings["configuration"]["SCREENGRAB_MAX_FPS"]:
           config.settings["configuration"]["SCREENGRAB_MAX_FPS"] = config.settings["devices"][self.board]["effect_opts"]["Visualight"]["capturefps"]
         
-        im = self.sv.GetScreen()
-		        
-        #im = self.sv.adjust_gamma( im, (config.settings["devices"][self.board]["effect_opts"]["Visualight"]["gamma"]) )
-        im = self.sv.adjust_channel_gamma( im, (config.settings["devices"][self.board]["effect_opts"]["Visualight"]["gamma_r"]),
+        im = sv.GetScreen()
+        
+        #time2 = time.time()
+
+        im = sv.adjust_channel_gamma( im, (config.settings["devices"][self.board]["effect_opts"]["Visualight"]["gamma_r"]),
           (config.settings["devices"][self.board]["effect_opts"]["Visualight"]["gamma_g"]),
           (config.settings["devices"][self.board]["effect_opts"]["Visualight"]["gamma_b"]))
-
+        #log( "Gamma : " + str( time.time() - time2 ), 10 )
+        #time2 = time.time()
         im = ImageEnhance.Color(im).enhance( config.settings["devices"][self.board]["effect_opts"]["Visualight"]["saturation"] )
-        #4.8??
         im = ImageEnhance.Contrast(im).enhance( config.settings["devices"][self.board]["effect_opts"]["Visualight"]["contrast"] )        
-        #1.24 blur
-        im = im.filter(ImageFilter.GaussianBlur(config.settings["devices"][self.board]["effect_opts"]["Visualight"]["blur"]) )
 
-         #0.3 seems good 
+        #FIXME : too slow? -find alternative
+        #im = im.filter(ImageFilter.GaussianBlur(config.settings["devices"][self.board]["effect_opts"]["Visualight"]["blur"]) )
+    
+        # #0.3 seems good 
         im = ImageEnhance.Brightness(im).enhance( config.settings["devices"][self.board]["effect_opts"]["Visualight"]["sensitivity"] )
-		
-
         
-        pixels = config.settings["devices"][self.board]["configuration"]["N_PIXELS"]
-        w = int(pixels * 0.32)
-        h = int(pixels * 0.18)
+        #log( "Enhance : " + str( time.time() - time2 ), 10 )
+        #time2 = time.time()
+      
         quality = config.settings["qualities"][config.settings["devices"][self.board]["effect_opts"]["Visualight"]["quality"]]
-        im = im.resize( (w,h), quality )
+        im = im.resize( (self.pixel_w,self.pixel_h), quality )
         
-        imTop = im.crop( (0, 0, w, 1) )
-        imRgt = im.crop( (w-1, 0, w, h) )#1
-        imBot = ImageOps.mirror( im.crop( (0, h-1, w, h) ) )
-        imLft = ImageOps.flip( im.crop( (0, 0, 1, h) ) )#h-1
+        #log( "Resize : " + str( time.time() - time2 ), 10 )
+        #time2 = time.time()
+        
+        imTop = im.crop( (0, 0, self.pixel_w, 1) )
+        imRgt = im.crop( (self.pixel_w-1, 0, self.pixel_w, self.pixel_h) )#1
+        imBot = ImageOps.mirror( im.crop( (0, self.pixel_h-1, self.pixel_w, self.pixel_h) ) )
+        imLft = ImageOps.flip( im.crop( (0, 0, 1, self.pixel_h) ) )#h-1
         top = np.column_stack( np.array( imTop.getdata(), np.uint8 ) )
         right = np.column_stack( np.array( imRgt.getdata(), np.uint8 ) )
         bot = np.column_stack( np.array( imBot.getdata(), np.uint8 ) )
         left = np.column_stack( np.array( imLft.getdata(), np.uint8 ) )
         output = np.concatenate( (top, right, bot, left), axis=1 )
-        decay = config.settings["devices"][self.board]["effect_opts"]["Visualight"]["decay"]
+        
+        # must adjust position before blending with previous
+        output = np.roll( output, config.settings["devices"][self.board]["effect_opts"]["Visualight"]["roll"], axis=1)
+        
+        decay = config.settings["devices"][self.board]["effect_opts"]["Visualight"]["decay"]        
         output = np.add( output * decay, self.prev_output * (1 - decay ) )
 
-        output = np.roll( output, config.settings["devices"][self.board]["effect_opts"]["Visualight"]["roll"], axis=1)
+
+
+        #log( "Tranform into pixels : " + str( time.time() - time2 ), 10 )
+        #time2 = time.time()
         
         # Could do some audio reactive stuff here :
         #if self.current_freq_detects["low"]:
@@ -1023,6 +870,7 @@ class Visualizer():
         #output2 = np.add( output, spectrum * 0.3 )
         #output = np.multiply( output, output2 )
         #log( list(output) )
+        #log( "Visualight : " + str( time.time() - time1 ), 9 )
         return output
         
     def visualize_single(self):
@@ -1499,7 +1347,7 @@ class GUI(QMainWindow):
             signal_processers[self.board].create_mel_bank()
         def freq_updatemqtt( key ):
             def func():
-              update_effect_setting( mqtt_client, board, key )
+              mqtt.update_effect_setting( mqtt_client, board, key )
             return func
         def set_freq_min():
             config.settings["devices"][board]["configuration"]["MIN_FREQUENCY"] = self.board_tabs_widgets[board]["freq_slider"].start()
@@ -1558,7 +1406,7 @@ class GUI(QMainWindow):
                 return func
             def gen_updatemqtt( key ):
                 def func():
-                  update_effect_setting( mqtt_client, board, key )
+                  mqtt.update_effect_setting( mqtt_client, board, key )
                 return func
             def gen_float_slider_valuechanger(effect, key):
                 def func():
@@ -1570,13 +1418,13 @@ class GUI(QMainWindow):
                 def func():
                     config.settings["devices"][board]["effect_opts"][effect][key] = self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].currentText()
                     log( "Set " + effect + " " + key + " to : " + self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].currentText(), 6 )
-                    update_effect_setting( mqtt_client, board, key )
+                    mqtt.update_effect_setting( mqtt_client, board, key )
                 return func
             def gen_checkbox_valuechanger(effect, key):
                 def func():
                     config.settings["devices"][board]["effect_opts"][effect][key] = self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].isChecked()
                     log( "Set " + effect + " " + key + " to : " + str(config.settings["devices"][board]["effect_opts"][effect][key]), 6 )
-                    update_effect_setting( mqtt_client, board, key )
+                    mqtt.update_effect_setting( mqtt_client, board, key )
                 return func
                                               
             # Dynamically generate ui for settings
@@ -1654,25 +1502,10 @@ class ScreenViewer:
         self.cl = False         #Continue looping flag
         self.lastcapture = 0    #limit framerate
         #Left, Top, Right, and bottom of the screen window
-        self.l, self.t, self.r, self.b = 0, 0, 0, 0
+        self.l, self.t, self.r, self.b, self.w, self.h = 0, 0, 0, 0, 0, 0
         #Border on left and top to remove
         self.bl, self.bt, self.br, self.bb = 12, 31, 12, 20
         
-        ## testing new method
-        if 0:
-          # Set up the buffers - only once, and we'll reuse them.
-          self.window = gtk.gdk.get_default_root_window()
-          self.size = window.get_size()
-          print ( "The size of the window is " + str(size[0]) + " " + str(size[1]) )
-
-          # Calculations for later on.
-          self.scale_x = float(config.settings["configuration"]["SCREENGRAB_WIDTH"]) / float(size[0])
-          self.scale_y = float(config.settings["configuration"]["SCREENGRAB_WIDTH"]) / float(size[1])
-          self.screen_contents = gtk.gdk.Pixbuf(gtk.gdk.COLORSPACE_RGB, False, 8, size[0], size[1])
-          self.screen_buffers = []
-          self.screen_buffers.append(gtk.gdk.Pixbuf(gtk.gdk.COLORSPACE_RGB, False, 8, config.settings["configuration"]["SCREENGRAB_WIDTH"], config.settings["configuration"]["SCREENGRAB_HEIGHT"]))
-          self.scaled_contents = gtk.gdk.Pixbuf(gtk.gdk.COLORSPACE_RGB, False, 8, config.settings["configuration"]["SCREENGRAB_WIDTH"], config.settings["configuration"]["SCREENGRAB_HEIGHT"])
-        ## end testing new method
         
         
     #Gets handle of window to view
@@ -1687,6 +1520,9 @@ class ScreenViewer:
             self.hwnd = None
             return False
         self.l, self.t, self.r, self.b = win32gui.GetWindowRect(self.hwnd)
+        self.w = self.r - self.l
+        self.h = self.b - self.t
+        
         return True
          
     #Get's the latest image of the window
@@ -1710,67 +1546,55 @@ class ScreenViewer:
          
     #Gets the screen of the window referenced by self.hwnd
     def GetScreenImg(self):
-#        if self.hwnd is None:
-#            raise Exception("HWND is none. HWND not called or invalid window name provided.")
+        if self.hwnd is None:
+            raise Exception("HWND is none. HWND not called or invalid window name provided.")
 
-        dest_h = config.settings["configuration"]["SCREENGRAB_HEIGHT"]
-        dest_w = config.settings["configuration"]["SCREENGRAB_WIDTH"]
+        dest_h = int(self.h / config.settings["configuration"]["SCREENGRAB_HEIGHT_SCALE"])
+        dest_w = int(self.w / config.settings["configuration"]["SCREENGRAB_WIDTH_SCALE"])
+        #log( ("dest w/h : " + str(dest_w) + "/" + str(dest_h)), 7 )
         #if not using windows, mss could be used.  it was about 2-3x slower for me on windows, though.
-        
-        ## testing new method 
-        #if 0:
-        #  # Fetch, scale down.
-        #  self.screen_contents = self.screen_contents.get_from_drawable(self.window, window.get_colormap(), 0, 0, 0, 0, self.size[0], self.size[1])
-        #  
-        #  # Scale into the current buffer.
-        #  self.screen_contents.scale(self.screen_buffers[0], 0, 0, dest_w, dest_h, 0, 0, self.scale_x, self.scale_y, gtk.gdk.INTERP_NEAREST)
-        ### end testing new method
-        #elif 0:
-        #  with mss() as sct:
-        #  # Get rid of the first, as it represents the "All in One" monitor:
-        #    for num, monitor in enumerate(sct.monitors[1:], 1):
-        #      # Get raw pixels from the screen
-        #      sct_img = sct.grab(monitor)
-        #      # Create the Image
-        #      im = Image.frombytes('RGB', sct_img.size, sct_img.bgra, 'raw', 'BGRX')
-        #      im = im.resize( (dest_w, dest_h) )
-        #else:
-        if 1:
-          rect = win32gui.GetWindowRect(self.hwnd)
-          t = rect[0]
-          l = rect[1]
-          w = rect[2] - rect[0]
-          h = rect[3] - rect[1]    
-          
+        if 0:
+          with mss() as sct:
+          # Get rid of the first, as it represents the "All in One" monitor:
+            for num, monitor in enumerate(sct.monitors[1:], 1):
+              # Get raw pixels from the screen
+              sct_img = sct.grab(monitor)
+              # Create the Image
+              im = Image.frombytes('RGB', sct_img.size, sct_img.bgra, 'raw', 'BGRX')
+              im = im.resize( (dest_w, dest_h) )
+        else:          
+          #time1 = time.time()
           dataBitMap = win32ui.CreateBitmap()        
           w_handle_DC = win32gui.GetWindowDC(self.hwnd)
           windowDC = win32ui.CreateDCFromHandle(w_handle_DC)
           memDC = windowDC.CreateCompatibleDC()
           dataBitMap.CreateCompatibleBitmap(windowDC , dest_w, dest_h)
           memDC.SelectObject(dataBitMap)
-          
-          memDC.StretchBlt((0,0), (dest_w, dest_h), windowDC, (t, l), (w,h), win32con.SRCCOPY)        
+          #log( "setup : " + str(time.time() - time1), 9 )
+          #time1 = time.time()
+          #memDC.BitBlt((0,0), (w, h), windowDC, (t, l), win32con.SRCCOPY)
+          #win32gui.SetStretchBltMode( w_handle_DC, win32con.HALFTONE )
+          memDC.StretchBlt((0,0), (dest_w, dest_h), windowDC, (self.t, self.l), (self.w,self.h), win32con.SRCCOPY)
+          #log( "blit : " + str(time.time() - time1), 9 )
           im = Image.frombuffer( 'RGB',(dest_w, dest_h),dataBitMap.GetBitmapBits(True), 'raw', 'BGRX', 0, 1)
           windowDC.DeleteDC()
           memDC.DeleteDC()
           win32gui.ReleaseDC(self.hwnd, w_handle_DC)
           win32gui.DeleteObject(dataBitMap.GetHandle())
-        
+          
         #Black Border Removal - gets rid of letter/pillar boxing
         #Tries to limit the overall cropping to sensical limits
-        #bbox = [ left, upper, right, lower ]
+        #time1 = time.time()
         bbox = im.getbbox()
-        #log( "1", left, upper, right, lower )
-        
-        #L/T/R/B
         if ( bbox is not None ):
           bbox = ( min( bbox[0], dest_w / 8 ), 
-                   min( bbox[1], dest_h / 8 ), 
+                   min( bbox[1], dest_w / 8 ), 
                    dest_w - min( dest_w - bbox[2], dest_w / 8 ), 
                    dest_h - min( dest_h - bbox[3], dest_h / 8 ) )
           im = im.crop( bbox )
+          
+        #log( "bbox : " + str(time.time() - time1), 9 )
         
-
 		#this might be faster - should do some tests, but so far speed seems fine
         #bits = np.fromstring(dataBitMap.GetBitmapBits(True), np.uint8)
         #
@@ -1832,7 +1656,9 @@ class ScreenViewer:
         lut = [pow(x/255., invert_gamma_r) * 255 for x in range(256)] + [pow(x/255., invert_gamma_g) * 255 for x in range(256)] + [pow(x/255., invert_gamma_b) * 255 for x in range(256)]
         im = im.point(lut)
         return im
-            
+
+        
+        
 class DSP():
     def __init__(self, board):
         # Name of board for which this dsp instance is processing audio
@@ -1876,32 +1702,38 @@ class DSP():
         """
 
         audio_data = {}
-        # Normalize samples between 0 and 1
-        y = audio_samples / 2.0**15
-        # Construct a rolling window of audio samples
-        self.y_roll[:-1] = self.y_roll[1:]
-        self.y_roll[-1, :] = np.copy(y)
-        y_data = np.concatenate(self.y_roll, axis=0).astype(np.float32)
-        vol = np.max(np.abs(y_data))
-        # Transform audio input into the frequency domain
-        N = len(y_data)
-        N_zeros = 2**int(np.ceil(np.log2(N))) - N
-        # Pad with zeros until the next power of two
-        y_data *= self.fft_window
-        y_padded = np.pad(y_data, (0, N_zeros), mode='constant')
-        YS = np.abs(np.fft.rfft(y_padded)[:N // 2])
-        # Construct a Mel filterbank from the FFT data
-        mel = np.atleast_2d(YS).T * self.mel_y.T
-        # Scale data to values more suitable for visualization
-        mel = np.sum(mel, axis=0)
-        mel = mel**2.0
-        # Gain normalization
-        self.mel_gain.update(np.max(gaussian_filter1d(mel, sigma=1.0)))
-        mel /= self.mel_gain.value
-        mel = self.mel_smoothing.update(mel)
-        x = np.linspace(config.settings["devices"][self.board]["configuration"]["MIN_FREQUENCY"], config.settings["devices"][self.board]["configuration"]["MAX_FREQUENCY"], len(mel))
-        y = self.fft_plot_filter.update(mel)
-
+        if config.uses_audio:
+          # Normalize samples between 0 and 1
+          y = audio_samples / 2.0**15
+          # Construct a rolling window of audio samples
+          self.y_roll[:-1] = self.y_roll[1:]
+          self.y_roll[-1, :] = np.copy(y)
+          y_data = np.concatenate(self.y_roll, axis=0).astype(np.float32)
+          vol = np.max(np.abs(y_data))
+          # Transform audio input into the frequency domain
+          N = len(y_data)
+          N_zeros = 2**int(np.ceil(np.log2(N))) - N
+          # Pad with zeros until the next power of two
+          y_data *= self.fft_window
+          y_padded = np.pad(y_data, (0, N_zeros), mode='constant')
+          YS = np.abs(np.fft.rfft(y_padded)[:N // 2])
+          # Construct a Mel filterbank from the FFT data
+          mel = np.atleast_2d(YS).T * self.mel_y.T
+          # Scale data to values more suitable for visualization
+          mel = np.sum(mel, axis=0)
+          mel = mel**2.0
+          # Gain normalization
+          self.mel_gain.update(np.max(gaussian_filter1d(mel, sigma=1.0)))
+          mel /= self.mel_gain.value
+          mel = self.mel_smoothing.update(mel)
+          x = np.linspace(config.settings["devices"][self.board]["configuration"]["MIN_FREQUENCY"], config.settings["devices"][self.board]["configuration"]["MAX_FREQUENCY"], len(mel))
+          y = self.fft_plot_filter.update(mel)
+        else:
+          mel = 0
+          vol = 0
+          x = 0
+          y = 0
+          
         audio_data["mel"] = mel
         audio_data["vol"] = vol
         audio_data["x"]   = x
@@ -2010,31 +1842,60 @@ def interpolate(y, new_length):
     z = np.interp(x_new, x_old, y)
     return z
 
+def update_requirements():
+    needs_audio = False
+    needs_video = False
+    
+    for board in boards:
+      effect = config.settings["devices"][board]["configuration"]["current_effect"]
+      if effect == "Visualight":
+        needs_video = True
+      elif effect not in visualizers[board].non_reactive_effects:
+        needs_audio = True
+
+    config.uses_audio = needs_audio
+    
+    #if we've changed effects, turn on/off screen grabbing as appropriate
+    if needs_video != config.uses_video:
+      config.uses_video = needs_video
+      if needs_video:
+        sv.Start()
+      else:
+        sv.Stop()
         
 def microphone_update(audio_samples):
     global y_roll, prev_rms, prev_exp, prev_fps_update, last_audio_enable_msg
-    if not enabled:
+    if not mqtt.audio_enabled():
       if last_audio_enable_msg == 0:
         last_audio_enable_msg = 1
         log( "Visualization Disabled - " + config.settings["configuration"]["MQTT_CMND_PREFIX"] + "[BoardName]" + config.settings["configuration"]["MQTT_ENABLE_TOPIC"], 7 )
       return
     # Get processed audio data for each device
+
+    update_requirements()
+    #time2 = time.time()
     audio_datas = {}
     for board in boards:
-        audio_datas[board] = signal_processers[board].update(audio_samples)
-        
+      audio_datas[board] = signal_processers[board].update(audio_samples)
+
+    
+    #log( "Audio Process : " + str( time.time() - time2 ), 10 )
     outputs = {}
     
     # Visualization for each board
     for board in boards:
         # Get visualization output for each board
-        audio_input = audio_datas[board]["vol"] > config.settings["configuration"]["MIN_VOLUME_THRESHOLD"]
+        if config.uses_audio: 
+          audio_input = audio_datas[board]["vol"] > config.settings["configuration"]["MIN_VOLUME_THRESHOLD"] 
+        else: 
+          audio_input = 1
         outputs[board] = visualizers[board].get_vis(audio_datas[board]["mel"], audio_input)
         # Map filterbank output onto LED strip(s)
         boards[board].show(outputs[board])
         if config.settings["configuration"]["USE_GUI"]:
             # Plot filterbank output
-            gui.board_tabs_widgets[board]["mel_curve"].setData(x=audio_datas[board]["x"], y=audio_datas[board]["y"])
+            if config.uses_audio:
+              gui.board_tabs_widgets[board]["mel_curve"].setData(x=audio_datas[board]["x"], y=audio_datas[board]["y"])
             # Plot visualizer output
             gui.board_tabs_widgets[board]["r_curve"].setData(y=outputs[board][0])
             gui.board_tabs_widgets[board]["g_curve"].setData(y=outputs[board][1])
@@ -2064,6 +1925,13 @@ def microphone_update(audio_samples):
 settings = QSettings('./lib/settings.ini', QSettings.IniFormat)
 settings.setFallbacksEnabled(False)    # File only, no fallback to registry
 update_config_dicts()
+
+# Display Status
+ds = Display_Status()
+#Screen Grabbing for Visualight Visualizer
+sv = ScreenViewer()
+#Optionally this could take a specific window name - None is fullscreen
+sv.GetHWND(None)
 
 # Initialise board(s)
 visualizers = {}
@@ -2099,7 +1967,8 @@ def ext_gui():
    return int_gui()
 
     
-mqtt_client = initialize_mqtt()
+mqtt_client = mqtt.initialize_mqtt( boards )
+
 
 # Initialise DSP
 signal_processers = {}
@@ -2122,7 +1991,6 @@ prev_fps_update = time.time()
 _time_prev = time.time() * 1000.0
 # The low-pass filter used to estimate frames-per-second
 _fps = dsp.ExpFilter(val=config.settings["configuration"]["FPS"], alpha_decay=0.2, alpha_rise=0.2)
-
 
 # Start listening to live audio stream
 microphone.start_stream(microphone_update)

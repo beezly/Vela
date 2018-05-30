@@ -1,3 +1,13 @@
+###
+### The entries below can be placed in your various 
+### home assistant .yaml files
+### You'll also find a python_scripts directory.  
+### Copy this to your home assistant config directory - config/python_scripts.
+### The contained script works around a current input_select bug 
+### so the input_select dropdowns can be automatically populated via MQTT
+### This allows all colors, palettes, and your list of audio devices to be set 
+### from the visualizer, so any new colors you add with automatically be added
+###
 
 group:
   led_fx:
@@ -6,7 +16,7 @@ group:
     view: no
     entities:
       - light.led_strip_lights
-# The enable FX switch acts as a global switch for all lights - unecessary if you want to control just a single one
+      # The enable FX switch acts as a global switch for all lights - unecessary if you want to control just a single one
       - switch.enable_fx
       - switch.led_strip_fx_switch
       - input_select.led_fx_mode
@@ -28,12 +38,13 @@ group:
       - input_select.led_fx_color_mid
       - input_select.led_fx_color_high
       - input_select.led_fx_capture_quality
+      - input_select.led_fx_audio_devices      
       - input_boolean.bool_fx_flip
       - input_boolean.bool_fx_reverse
       - input_number.slider_fx_capturefps
       - input_number.slider_fx_contrast
       - input_number.slider_fx_saturation
-
+           
 
 light:
   - platform: mqtt
@@ -79,161 +90,40 @@ light:
     payload_off: "OFF"
 
 
-# There really should be a better way to template these options which are repeated.
-# Perhaps through a python script component or the set options service for input_select
-# This didn't work, although I expect it should :
-#    sequence:
-#      - service: input_select.set_options
-#        data_template:
-#          entity_id: input_select.led_fx_color_flash
-#          options: '{{ states.input_select.led_fx_color.attributes.options }}'
+# These input_selects have no entries because they'll be populated by the visualizer.  This avoids a bunch of duplicated stuff here,
+# but also allows any changes/new stuff added to the visualizer to auto-populate
+# Setting up input_selects via the existing service call didn't work, so it uses a python script to do it
 
 input_select:
   led_fx_palette:
     name: FX Palette
     options:
-      - "Spectral"  
-      - "Dancefloor"
-      - "Sunset"    
-      - "Ocean"     
-      - "Jungle"    
-      - "Sunny"     
-      - "Fruity"    
-      - "Peach"     
-      - "Rust"
-      - "Xmas"
-      - "Sakura"
-      - "Forest"
+      - ""  
     icon: mdi:palette 
   led_fx_color:
     name: FX Color
     options:
-      - "Red"
-      - "Coral"
-      - "Orange"
-      - "Yellow"
-      - "Gold"
-      - "Yellow Green"
-      - "Green"
-      - "Cyan"
-      - "Turquoise"
-      - "Blue"
-      - "Light Blue"
-      - "Sky Blue"
-      - "Mauve"
-      - "Purple"
-      - "Pink"
-      - "Blossom"
-      - "Rose"
-      - "White"
-      - "Peach"
-      - "Spring Green"
-      - "Pale Green"
-      - "Forest Green"  
+      - "" 
     icon: mdi:eyedropper
   led_fx_color_flash:
     name: FX Flash Color
     options:
-      - "Red"
-      - "Coral"
-      - "Orange"
-      - "Yellow"
-      - "Gold"
-      - "Yellow Green"
-      - "Green"
-      - "Cyan"
-      - "Turquoise"
-      - "Blue"
-      - "Light Blue"
-      - "Sky Blue"
-      - "Mauve"
-      - "Purple"
-      - "Pink"
-      - "Blossom"
-      - "Rose"
-      - "White"
-      - "Peach"
-      - "Spring Green"
-      - "Pale Green"
-      - "Forest Green"  
+      - ""
     icon: mdi:eyedropper
   led_fx_color_low:
     name: Scroll Low Color
     options:
-      - "Red"
-      - "Coral"
-      - "Orange"
-      - "Yellow"
-      - "Gold"
-      - "Yellow Green"
-      - "Green"
-      - "Cyan"
-      - "Turquoise"
-      - "Blue"
-      - "Light Blue"
-      - "Sky Blue"
-      - "Mauve"
-      - "Purple"
-      - "Pink"
-      - "Blossom"
-      - "Rose"
-      - "White"
-      - "Peach"
-      - "Spring Green"
-      - "Pale Green"
-      - "Forest Green"  
+      - ""
     icon: mdi:eyedropper
   led_fx_color_mid:
     name: Scroll Mid Color
     options:
-      - "Red"
-      - "Coral"
-      - "Orange"
-      - "Yellow"
-      - "Gold"
-      - "Yellow Green"
-      - "Green"
-      - "Cyan"
-      - "Turquoise"
-      - "Blue"
-      - "Light Blue"
-      - "Sky Blue"
-      - "Mauve"
-      - "Purple"
-      - "Pink"
-      - "Blossom"
-      - "Rose"
-      - "White"
-      - "Peach"
-      - "Spring Green"
-      - "Pale Green"
-      - "Forest Green"  
+      - ""
     icon: mdi:eyedropper
   led_fx_color_high:
     name: Scroll High Color
     options:
-      - "Red"
-      - "Coral"
-      - "Orange"
-      - "Yellow"
-      - "Gold"
-      - "Yellow Green"
-      - "Green"
-      - "Cyan"
-      - "Turquoise"
-      - "Blue"
-      - "Light Blue"
-      - "Sky Blue"
-      - "Mauve"
-      - "Purple"
-      - "Pink"
-      - "Blossom"
-      - "Rose"
-      - "White"
-      - "Peach"
-      - "Spring Green"
-      - "Pale Green"
-      - "Forest Green"  
+      - ""
     icon: mdi:eyedropper
   led_fx_mode:
     name: FX Mode
@@ -377,6 +267,73 @@ switch:
 
 
 automation:
+
+# These automations read the options from the visualizer and populate the input_selects
+  - alias: Fill out microphone input select
+    initial_state: 'on'
+    hide_entity: True  
+    trigger:
+      platform: mqtt
+      topic: "stat/visualizer/monitor/audio_devices"
+    action:
+      - service_template: python_script.set_input_options
+        data_template:
+          entity_id: input_select.led_fx_audio_devices
+          options: '{{ trigger.payload }}'
+  - alias: Fill out palette input select
+    initial_state: 'on'
+    hide_entity: True  
+    trigger:
+      platform: mqtt
+      topic: "stat/visualizer/monitor/palette_options"
+    action:
+      - service_template: python_script.set_input_options
+        data_template:
+          entity_id: input_select.led_fx_palette
+          options: '{{ trigger.payload }}'
+  - alias: Fill out color input selects
+    initial_state: 'on'
+    hide_entity: True  
+    trigger:
+      platform: mqtt
+      topic: "stat/visualizer/monitor/color_options"
+    action:
+      - service_template: python_script.set_input_options
+        data_template:
+          entity_id: input_select.led_fx_color
+          options: '{{ trigger.payload }}'
+      - service_template: python_script.set_input_options
+        data_template:
+          entity_id: input_select.led_fx_color_flash
+          options: '{{ trigger.payload }}'
+      - service_template: python_script.set_input_options
+        data_template:
+          entity_id: input_select.led_fx_color_low
+          options: '{{ trigger.payload }}'
+      - service_template: python_script.set_input_options
+        data_template:
+          entity_id: input_select.led_fx_color_mid
+          options: '{{ trigger.payload }}'
+      - service_template: python_script.set_input_options
+        data_template:
+          entity_id: input_select.led_fx_color_high
+          options: '{{ trigger.payload }}'
+
+          
+# This automation will turn on/off the specified strip/s based on the power state of the display
+  - alias: Toggle LED Strip on Display Change
+    initial_state: 'on'
+    hide_entity: True
+    trigger:
+      platform: mqtt
+      topic: "stat/visualizer/monitor/display"
+    action:
+      - service: mqtt.publish
+        data_template:
+          topic: "cmnd/visualizer/monitor/dimmer"
+          payload: "{% if trigger.payload == 'on' %}100{% else %}0{% endif %}"
+
+
   - alias: Activate LED Strip 1
     initial_state: 'on'
     hide_entity: True  

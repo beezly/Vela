@@ -400,6 +400,7 @@ void Ws2812AudioCommand( uint8_t R, uint8_t G, uint8_t B )
   else if ( G != 0 )
   {
     Serial.print( "Received UDP Dimmer Value : " );
+    G -= 100;
     Serial.println( G );
     snprintf_P(command, sizeof(command), PSTR(D_CMND_DIMMER " %d"), G );
   }

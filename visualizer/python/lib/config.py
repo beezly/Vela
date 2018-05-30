@@ -4,11 +4,21 @@ from __future__ import division
 from PIL import Image
 import os
 
+uses_audio = False
+uses_video = False
+
+def log( msg, log_level = 0 ):
+  if ( settings["configuration"]["LOG_LEVEL"] ) > log_level:
+    print( msg )
+
 use_defaults = {"configuration": True,                           # See notes below for detailed explanation
                 "GUI_opts": False,
                 "devices": True,
                 "colors": True,
-                "gradients": True}
+                "gradients": True,
+                "qualities": True,
+                "setting_topics": True,
+                "setting_scales": True}
 
 settings = {                                                      # All settings are stored in this dict
 
@@ -23,6 +33,7 @@ settings = {                                                      # All settings
                      'N_ROLLING_HISTORY': 3,                                                  # Number of past audio frames to include in the rolling window
                      'MIN_VOLUME_THRESHOLD': 0.00000001,                                      # No music visualization displayed if recorded audio volume below threshold
                      #'LOGARITHMIC_SCALING': True,                                            # Scale frequencies logarithmically to match perceived pitch of human ear
+                     "CHECK_DISPLAY": True,                                                   # Should we test the monitor state and send out messages over MQTT?
                      "USE_MULTICAST": False,                                                  # Should we use a multicast IP instead of unicast to individual IPs?
                      "USE_MQTT": True,                                                        # If true, take/issue commands via MQTT
                      "USE_MQTT_LED_STATE" : False,                                            # If true will set LED state to an MQTT topic.  Not really fast enough for realtime audio, but could be useful for other stuff?  Deprecated...
@@ -36,6 +47,11 @@ settings = {                                                      # All settings
                      "MQTT_POWER_TOPIC":  "/power",                                           # Exit audio mode to power on/off
                      "MQTT_DIMMER_TOPIC": "/dimmer",                                          # Dimmer brightness from 1-100
                      "MQTT_DEBUG_TOPIC":  "/debug",                                           # Debugging commands can be set on this from 1-255
+                     "MQTT_DISPLAY_TOPIC": "/display",                                        # The display topic on/off
+                     "MQTT_AUDIO_DEVICES_TOPIC": "/audio_devices",                            # A list of available audio devices
+                     "MQTT_MICROPHONE_TOPIC": "/mic",                                         # Select a microphone command
+                     "MQTT_COLOR_OPTIONS_TOPIC": "/color_options",                            # A list of available color options
+                     "MQTT_PALETTE_OPTIONS_TOPIC": "/palette_options",                        # A list of available palette options
                      "MQTT_EFFECT_BASE_TOPIC":          "/effect/",                           # The effect mode by name
                      "MQTT_EFFECT_MODE_TOPIC":          "mode",                               # The effect mode by name
                      "MQTT_EFFECT_SPEED_TOPIC":         "speed",                              # The speed of the effect	
@@ -67,10 +83,13 @@ settings = {                                                      # All settings
                      "MQTT_AVAILABLE_LIGHTS_STATE_TOPIC": "/state",                           # The state topic for each strip ie : stat/visualizer/[boardname]/lights/[name]/state
                      "MQTT_AVAILABLE_LIGHTS_STATE_PAYLOAD_AVAILABLE": "on",                   # LED Strip opt in avaiablility topic on
                      "MQTT_AVAILABLE_LIGHTS_STATE_PAYLOAD_UNAVAILABLE": "off",                # LED Strip opt in avaiablility topic off
+                     "MQTT_MONITOR_PAYLOAD_ON":  "on",                                        # Payload for monitor on
+                     "MQTT_MONITOR_PAYLOAD_OFF": "off",                                       # Payload for monitor off
+                     "MQTT_MONITOR_PAYLOAD_SUSPEND": "sleep",                                 # Payload for monitor sleep
                      "MQTT_TOPIC_QOS": 0,                                                     # QOS for topic
                      "MULTICAST_UDP_IP": "225.255.255.240",                                   # Multicast UDP IP
-                     "SCREENGRAB_HEIGHT": 144,                                                # The output height for visualight
-                     "SCREENGRAB_WIDTH": 256,                                                 # The output width for visualight
+                     "SCREENGRAB_HEIGHT_SCALE": 10,                                           # The output height for visualight
+                     "SCREENGRAB_WIDTH_SCALE": 10,                                            # The output width for visualight
                      "SCREENGRAB_MAX_FPS": 30,                                                # Screengrabbing will be capped at this framerate for performance reasons
                      },
 
@@ -159,8 +178,8 @@ settings = {                                                      # All settings
                                                    "sensitivity": 0.35,             # Brightness of the effect
                                                    "decay": 0.8,                    # How much interpolation to do between frames
                                                    "roll": 34,                      # Offet for strip if it's not top left corner as the start
-                                                   "capturefps": 30,                # Maximum capture speed.  Will override the global one
-                                                   "quality":"Lanczos"             # The quality and therby speed of scaling, selected from the quality list below
+                                                   "capturefps": 24,                # Maximum capture speed.  Will override the global one
+                                                   "quality":"Lanczos"              # The quality and therby speed of scaling, selected from the quality list below
                                                    },
                                      "Gradient":  {"color_mode":"Spectral",         # Colour gradient to display
                                                    "roll_speed": 0,                 # How fast (if at all) to cycle colour colours across strip

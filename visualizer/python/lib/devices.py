@@ -111,6 +111,9 @@ class ESP8266(LEDController):
         self._port = port
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         
+        self.pixels_prev = 0
+        self.time_prev = 0
+        
         self._name = name
         if auto_detect:
             self.detect()
@@ -134,6 +137,8 @@ class ESP8266(LEDController):
         print("Found device {}, with IP address {}".format(self._mac_addr, ip_addr))
         self._ip = ip_addr
 
+
+        
     def show(self, pixels):
         """Sends UDP packets to ESP8266 to update LED strip values
         The ESP8266 will receive and decode the packets to determine what values
@@ -147,7 +152,13 @@ class ESP8266(LEDController):
             g (0 to 255): Green value of LED
             b (0 to 255): Blue value of LED
         """
+          
         pixels = np.clip(pixels, 0, config.settings["configuration"]["MAX_BRIGHTNESS"]).astype(int)
+        
+        # Don't bother spamming the network if we haven't changed since last time
+        # Just update periodically to ensure we don't timeout.
+        if (self.pixels_prev == pixels).all() and time.time() - self.time_prev < 5:
+          return
         
         message = []
         
@@ -164,6 +175,9 @@ class ESP8266(LEDController):
             self._sock.sendto(message, (ip, self._port))
         else:
           self._sock.sendto(message, (self._ip, self._port))
+          
+        self.pixels_prev = pixels
+        self.time_prev = time.time()
 
 
 class FadeCandy(LEDController):
