@@ -5,11 +5,13 @@
 
 A general ESP8266/Sonoff controller for WS2812/SK6812 LED Strips that has a range of lighting FX but can also be driven externally with both Audio Visualizer and Backlighting features (simple Ambilight/Hyperion functionality).
 
-It has a local PC GUI as well as an MQTT interface for the visualizer, and a set of controls for Home Assistant as well.
+It has a local GUI as well as an MQTT interface for the visualizer, and a set of controls for Home Assistant as well. 
 
 Multiple LED Strip clients can be driven by the single visualizer.  The visualizer renders for a defined set of virtual pixels which are remapped into the actual number of LED pixels per-strip.
 
 The Sonoff-Tasmota based firmware for ESP8266 devices allows for a robust general lighting interface that can control audio/video visualizations via an external Python application and Home Assistant integration.
+
+It also supports detecting the display state (monitor or TV) of the machine it is running on to toggle the lights (or drive other automations).
 
 I just made this for my own entertainment, with a lot of experimentation and learning along the way.  If it's useful to you, great!
 
@@ -32,7 +34,7 @@ I'm a big fan of the Tasmota firmware for Sonoff and ESP8266 devices, so it seem
 Most of the other options out there for doing LED FX were great for that, but limited in many other ways.  I decided to take a stab at integrating the two together.
 
 I initially looked at just expanding what was there by directly adding more FX to Tasmota, but I fell down the rabbithole of wanting to do some audio visualization as well.  I stumbled across a nice existing base for this with the [Reactive Audio Strip](https://github.com/scottlawsonbc/audio-reactive-led-strip)/[Systematic-LEDs](https://github.com/not-matt/Systematic-LEDs) work.
-I also figured some bias lighting/Ambilight style backlighting effects would be nice to have.  None of the existing solutions here I could find are Windows based and pretty much all of them want you to be running off a raspberry pi (which I'm not).  I decided to try out just doing my own traslation in the existing python audio visualizer core.  I haven't used python at all prior to this, so my approach is probably naive and certainly less optimal than it could otherwise be, but it works for my purposes.
+I also figured some bias lighting/Ambilight style backlighting effects would be nice to have.  None of the existing solutions here I could find are Windows based and pretty much all of them want you to be running off a raspberry pi (which I'm not).  I decided to try out just doing my own version in the existing python audio visualizer core.  I haven't used python at all prior to this, so my approach is probably naive and certainly less optimal than it could otherwise be, but it works for my purposes.
 
 Could I have just used a seperate pi here for the strips doing backlighting and ditched the ESP8266?  Sure, but it's fun to have them all be able to sync up for audio and all have the same general functionality.
 
@@ -50,11 +52,13 @@ This stuff is 90% the work of the original authors, I just crammed them all toge
 
 
 ## Caveats
+This is currently Windows only.  That's what I'm using it on, so that's where all the work has gone.  Mostly it'd work wherever, but the display detection and screengrabbing are Windows specific.  It could go multiplatform with a little bit of work in those areas.
+
 I've seen a problem where it seems like UDP messages get queued and the strip falls behind.  Try lowering your framerate in this scenario.  Mine seemed to happen above 60 regularly.
 
 I found that I couldn't have an active UDP stream going to the ESP8266 for FX while also maintaining the webserver or MQTT connections.  Trying to do so would cause them to fail and leak heap memory until the ESP8266 crashed.
 Given that the audio/video effects are realtime, it didn't look like there'd be way to interleave them or anything either. 
-So while the audio/video driven FX are live, the web and mqtt interfaces to the strip are disabled.  You have to use the FX side of the controls to drive the strip.  This includes a few non-effect messages that can be sent to the strip to change it out of audio mode, set a specific "Scheme" (local effect), change brightness, etc.
+So while the audio/video driven FX are live, the web and mqtt interfaces to the strip are disabled.  You have to use the FX side of the controls to drive the strip.  This includes a few non-effect messages that can be sent to the strip to change it out of audio mode, change brightness, etc.
 
 I tried UDP multicast and found that for some reason I got far worse performance.  It went from 60 fps down to ~10-15.  I tried a few solutions here, but I didn't ultimately figure out how to get multicast performance to match unicast.
 As such, each strip registers itself with the visualizer and gets its own unicast stream.  If you have a whole ton of strips, you'll probably want to investigate the multicast route, although whatever code that is there isn't hooked up at the moment.
@@ -63,7 +67,6 @@ As such, each strip registers itself with the visualizer and gets its own unicas
 More reactive and non-reactive FX.  
 Create a custom component for Home Assistant rather than a collection of inputs and automations.
 Investigate higher performance screen grabbing techniques.
-Grab the local display aspect ratio as a basis for the video visualization (currently hard-coded to 16:9).
 
 ## Installation
 
