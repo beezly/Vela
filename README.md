@@ -1,4 +1,4 @@
-## Visualight - A Sonoff LED Visualizer
+## Vela - A Sonoff LED Visualizer
 <img src="https://github.com/rando-calrissian/Visualight/blob/development/images/backlight.gif" width="480" align="right" />
 <img src="https://github.com/scottlawsonbc/audio-reactive-led-strip/blob/master/images/description-cropped.gif" width="480" align="right" />
 
