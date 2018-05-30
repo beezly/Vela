@@ -95,6 +95,11 @@ light:
 # Setting up input_selects via the existing service call didn't work, so it uses a python script to do it
 
 input_select:
+  led_fx_audio_devices:
+    name: FX Input Device
+    options:
+      - "Default"
+    icon: mdi:microphone-outline
   led_fx_palette:
     name: FX Palette
     options:
