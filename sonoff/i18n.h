@@ -278,6 +278,8 @@
 #define D_CMND_WAKEUP "Wakeup"
 #define D_CMND_WAKEUPDURATION "WakeUpDuration"
 #define D_CMND_WIDTH "Width"
+#define D_CMND_FX_DEVICE "FxDevice"
+#define D_CMND_FX_ENABLE "FxEnable"
 
 // Commands xdrv_02_irremote.ino
 #define D_CMND_IRSEND "IRSend"

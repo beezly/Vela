@@ -10,5 +10,9 @@
 sonoff/user_config_override.h
 build
 
+## Python ##
+__pycache__
+*.pyc
+
 ## Visual Studio Code specific ######
 .vscode

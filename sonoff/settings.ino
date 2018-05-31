@@ -417,6 +417,7 @@ void SettingsDefaultSet2()
   strlcpy(Settings.mqtt_topic, MQTT_TOPIC, sizeof(Settings.mqtt_topic));
   strlcpy(Settings.button_topic, "0", sizeof(Settings.button_topic));
   strlcpy(Settings.mqtt_grptopic, MQTT_GRPTOPIC, sizeof(Settings.mqtt_grptopic));
+  strlcpy(Settings.mqtt_light_fx_topic, MQTT_LIGHT_FX_TOPIC, sizeof(Settings.mqtt_light_fx_topic));
   Settings.tele_period = TELE_PERIOD;
 
   Settings.power = APP_POWER;
@@ -567,6 +568,7 @@ void SettingsDefaultSet_3_9_3()
   Settings.light_scheme = 0;
   Settings.light_width = 1;
   Settings.light_wakeup = 0;
+  Settings.light_fx_enabled = 0;
 }
 
 void SettingsDefaultSet_4_0_4()
