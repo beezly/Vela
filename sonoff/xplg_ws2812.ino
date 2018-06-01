@@ -85,6 +85,8 @@ uint8_t audio_disabled_watchdog = 0;
 
 bool bEverythingDisabled = false;
 
+bool bInternalPowerState = true;
+
 uint8_t nMaxPixels = 1;
 uint8_t nHeapProblems = 0;
 
@@ -200,7 +202,7 @@ void RegisterAudioStrip( bool bAvailable )
     char stopic[TOPSZ];
     snprintf_P(stopic, sizeof(stopic), PSTR( "%s/%s/%s/%s/%s/%s"), PUB_PREFIX, MQTT_VISUALIZER_PREFIX, Settings.mqtt_light_fx_topic, MQTT_LIGHTS_TOPIC, Settings.mqtt_topic, MQTT_LIGHTS_IP_TOPIC );
     Serial.println( stopic );
-    MqttClient.publish(stopic, WiFi.localIP().toString().c_str(), false );//bAvailable?"on":"off", true );
+    MqttClient.publish(stopic, WiFi.localIP().toString().c_str(), true );//bAvailable?"on":"off", true );
   }
   else
   {
@@ -208,6 +210,9 @@ void RegisterAudioStrip( bool bAvailable )
     snprintf_P(stopic, sizeof(stopic), PSTR( "%s/%s/%s/%s/%s/%s"), PUB_PREFIX, MQTT_VISUALIZER_PREFIX, Settings.mqtt_light_fx_topic, MQTT_LIGHTS_TOPIC, Settings.mqtt_topic, MQTT_LIGHTS_STATE_TOPIC );
     Serial.println( stopic );
     MqttClient.publish(stopic, "off", false );//bAvailable?"on":"off", true );
+    snprintf_P(stopic, sizeof(stopic), PSTR( "%s/%s/%s/%s/%s/%s"), PUB_PREFIX, MQTT_VISUALIZER_PREFIX, Settings.mqtt_light_fx_topic, MQTT_LIGHTS_TOPIC, Settings.mqtt_topic, MQTT_LIGHTS_IP_TOPIC );
+    Serial.println( stopic );
+    MqttClient.publish(stopic, "", true );
     if ( Settings.light_fx_enabled > 0 )
     {
       Settings.light_fx_enabled = 0;
@@ -328,6 +333,7 @@ boolean ConnectUDP()
     if (AudioPortUdp.begin(multicast_port)) {
       AddLog_P(LOG_LEVEL_INFO, PSTR(D_LOG_UPNP D_MULTICAST_REJOINED));
       bUDPConnected = true;
+      bInternalPowerState = true;
     } else {
       AddLog_P(LOG_LEVEL_INFO, PSTR(D_LOG_UPNP D_MULTICAST_JOIN_FAILED));
       bUDPConnected = false;
@@ -382,11 +388,13 @@ void Ws2812AudioCommand( uint8_t R, uint8_t G, uint8_t B )
   	{
   		Serial.println( "Received UDP Power Off");
   		snprintf_P(command, sizeof(command), PSTR(D_CMND_POWER " OFF"));
+		bInternalPowerState = false;
   	}
   	else if ( R == 21 )
   	{
   		Serial.println( "Received UDP Power On");
   		snprintf_P(command, sizeof(command), PSTR(D_CMND_POWER " ON"));
+		bInternalPowerState = true;
   	}
   	else if ( R >= 30 && R <= 42 )
   	{
@@ -434,6 +442,16 @@ void Ws2812Audio()
 #endif
 
   float flDimmer = (float)Settings.light_dimmer / 100.0f;
+
+  // While we can turn the relay power on/off via commands, if we immediately get
+  // new color commands, we'll still show them.  We still want our other
+  // command processing and watchdogs to work, so just treat the pixels
+  // as off, but allow everything to run normally.
+  if ( !bInternalPowerState )
+  {
+    flDimmer = 0.0f;
+  }
+
 
   // With UDP and TCP stuff active (mqtt/webserver) heap leaked
   // constantly.  Since we only do UDP while active, this is

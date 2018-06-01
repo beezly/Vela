@@ -328,15 +328,15 @@ automation:
 # This automation will turn on/off the specified strip/s based on the power state of the display
   - alias: Toggle LED Strip on Display Change
     initial_state: 'on'
-    hide_entity: True
+    #hide_entity: True
     trigger:
       platform: mqtt
       topic: "stat/visualizer/monitor/display"
     action:
       - service: mqtt.publish
         data_template:
-          topic: "cmnd/visualizer/monitor/dimmer"
-          payload: "{% if trigger.payload == 'on' %}100{% else %}0{% endif %}"
+          topic: "cmnd/visualizer/monitor/power"
+          payload: '{{ trigger.payload }}'
 
 
   - alias: Activate LED Strip 1
