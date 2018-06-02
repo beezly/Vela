@@ -9,7 +9,7 @@ from lib.config import log
 
 boards = {}
 
-## Because multiple systems are calling commands and setting status here (which then update ui, which may also call commands and set status,
+## Because multiple systems are calling commands and setting status here (which then update ui, which may also call commands and set status),
 ## there can be feedback loops where the cmnd and status messages get out of sync causing ping-ponging between two values.
 ## This debouncer will ignore a message if it bounced back and forth quickly, making it rest on one state or the other
 debouncer = {}
@@ -219,6 +219,8 @@ def on_message_audio_power(client, userdata, message):
   if str( power_value ) == 'on':
     power_value = 1
   if str( power_value ) == 'off':
+    power_value = 0
+  if str( power_value ) == 'sleep':
     power_value = 0
   power_value = min( 1, max( -1, int(power_value)))
   if ( power_value is not -1 ):

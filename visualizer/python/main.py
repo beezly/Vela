@@ -17,12 +17,8 @@ import asyncio
 
 from collections import defaultdict
 from PIL import Image
-from PIL import ImageGrab
-from PIL import ImageStat
 from PIL import ImageEnhance
 from PIL import ImageOps
-from PIL import ImageFilter
-from PIL import ImageChops
 #alternate screengrabbing techniques
 #mss and gtk
 #if 0:
@@ -1574,7 +1570,19 @@ class ScreenViewer:
           #time1 = time.time()
           #memDC.BitBlt((0,0), (w, h), windowDC, (t, l), win32con.SRCCOPY)
           #win32gui.SetStretchBltMode( w_handle_DC, win32con.HALFTONE )
-          memDC.StretchBlt((0,0), (dest_w, dest_h), windowDC, (self.t, self.l), (self.w,self.h), win32con.SRCCOPY)
+          
+          try:
+            memDC.StretchBlt((0,0), (dest_w, dest_h), windowDC, (self.t, self.l), (self.w,self.h), win32con.SRCCOPY)
+          except Exception as e:
+            # If we fail for some reason, just clean up and return black
+            log("Exception: %s" % str(e))
+            windowDC.DeleteDC()
+            memDC.DeleteDC()
+            win32gui.ReleaseDC(self.hwnd, w_handle_DC)
+            win32gui.DeleteObject(dataBitMap.GetHandle())
+            im = Image.new('RGB', (dest_w,dest_h), (0, 0, 0))
+            return im
+            
           #log( "blit : " + str(time.time() - time1), 9 )
           im = Image.frombuffer( 'RGB',(dest_w, dest_h),dataBitMap.GetBitmapBits(True), 'raw', 'BGRX', 0, 1)
           windowDC.DeleteDC()
@@ -1991,6 +1999,8 @@ prev_fps_update = time.time()
 _time_prev = time.time() * 1000.0
 # The low-pass filter used to estimate frames-per-second
 _fps = dsp.ExpFilter(val=config.settings["configuration"]["FPS"], alpha_decay=0.2, alpha_rise=0.2)
+
+microphone.microphone_register_gui( gui )
 
 # Start listening to live audio stream
 microphone.start_stream(microphone_update)

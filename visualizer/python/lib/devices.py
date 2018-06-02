@@ -153,7 +153,11 @@ class ESP8266(LEDController):
             b (0 to 255): Blue value of LED
         """
           
-        pixels = np.clip(pixels, 0, config.settings["configuration"]["MAX_BRIGHTNESS"]).astype(int)
+        pixels = np.clip(pixels, 0, config.settings["devices"][self._name]["configuration"]["MAX_BRIGHTNESS"]).astype(int)
+        
+        offset = config.settings["devices"][self._name]["configuration"]["N_PIXEL_OFFSET"]
+        if offset is not 0:
+          pixels = np.roll( pixels, config.settings["devices"][self._name]["configuration"]["N_PIXEL_OFFSET"], axis=1)
         
         # Don't bother spamming the network if we haven't changed since last time
         # Just update periodically to ensure we don't timeout.

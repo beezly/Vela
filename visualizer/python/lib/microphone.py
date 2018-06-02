@@ -4,6 +4,7 @@ import pyaudio
 import lib.config as config
 from lib.config import log
 
+ext_gui = None
 stream = None
 p = pyaudio.PyAudio()
 
@@ -21,6 +22,10 @@ def get_audio_devices():
   #print ( audio_options )
   return audio_options
 
+def microphone_register_gui( gui ):
+  global ext_gui
+  ext_gui = gui
+  
 def reset_microphone_device():
   global stream
   if stream is not None:
@@ -29,7 +34,7 @@ def reset_microphone_device():
     stream = None
 
 def start_stream(callback):
-  global stream, p
+  global stream, p, ext_gui
 
   id = -1
   

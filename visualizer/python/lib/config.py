@@ -28,7 +28,7 @@ settings = {                                                      # All settings
                      'DISPLAY_FPS': False,                                                    # Whether to print the FPS when running (can reduce performance)
                      'MIC_RATE': 44100,                                                       # Sampling frequency of the microphone in Hz
                      'MIC_NAME': '',                                                          # Set input name or keep empty to use default input
-                     'FPS': 40,                                                               # Desired refresh rate of the visualization (frames per second)
+                     'FPS': 50,                                                               # Desired refresh rate of the visualization (frames per second)
                      'MAX_BRIGHTNESS': 255,                                                   # Max brightness sent to LED strip
                      'N_ROLLING_HISTORY': 3,                                                  # Number of past audio frames to include in the rolling window
                      'MIN_VOLUME_THRESHOLD': 0.00000001,                                      # No music visualization displayed if recorded audio volume below threshold
@@ -110,6 +110,7 @@ settings = {                                                      # All settings
                                        "MAX_BRIGHTNESS": 255,                       # Max brightness of output (0-255) (my strip sometimes bugs out with high brightness)
                                          # Other configuration 
                                        "N_PIXELS": 100,                             # Number of pixels in the LED strip for visualization - will be remapped to the actual number by the ESP8266
+                                       "N_PIXEL_OFFSET": 0,                         # How much to offset the edge/center of the effect.  Useful for rings and things where your physical strip start/endpoints aren't aligned to where you want the start/end of the effect
                                        "N_FFT_BINS": 24,                            # Number of frequency bins to use when transforming audio to frequency domain
                                        "MIN_FREQUENCY": 200,                        # Frequencies below this value will be removed during audio processing
                                        "MAX_FREQUENCY": 12000,                      # Frequencies above this value will be removed during audio processing
@@ -177,7 +178,7 @@ settings = {                                                      # All settings
                                                    "contrast":4.8,                  # How much contrast we use
                                                    "sensitivity": 0.35,             # Brightness of the effect
                                                    "decay": 0.8,                    # How much interpolation to do between frames
-                                                   "roll": 34,                      # Offet for strip if it's not top left corner as the start
+                                                   "roll": 34,                      # Offet for strip if it's not top left corner as the start - this will also be offset by the N_PIXEL_OFFSET, so alternatively you can set it globally there
                                                    "capturefps": 24,                # Maximum capture speed.  Will override the global one
                                                    "quality":"Lanczos"              # The quality and therby speed of scaling, selected from the quality list below
                                                    },
