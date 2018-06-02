@@ -29,14 +29,14 @@ The visualizer app can have multiple visualizations running simultaneously.  Eac
 
 ## Background
 I wanted to add some LED strips to a few places and integrate it into my existing automation solutions.  
-I'm a big fan of the Tasmota firmware for Sonoff and ESP8266 devices, so it seemed like a good starting place.  Mostly these were for lighting, but I wanted to be able to have some fun with them too.  Tastmota has pretty limited options for controlling LED Strips, but otherwise it's a solid and versatile setup with a great web interface, MQTT interface, OTA support, etc.  I wanted to keep all of this stuff for my setup if possible.
+I'm a big fan of the Tasmota firmware for Sonoff and ESP8266 devices, so it seemed like a good starting place.  Mostly these were for lighting, but I wanted to be able to have some fun with them too.  Tasmota has pretty limited options for controlling LED Strips, but otherwise it's a solid and versatile setup with a great web interface, MQTT interface, OTA support, etc.  I wanted to keep all of this stuff for my setup if possible.
 
 Most of the other options out there for doing LED FX were great for that, but limited in many other ways.  I decided to take a stab at integrating the two together.
 
 I initially looked at just expanding what was there by directly adding more FX to Tasmota, but I fell down the rabbithole of wanting to do some audio visualization as well.  I stumbled across a nice existing base for this with the [Reactive Audio Strip](https://github.com/scottlawsonbc/audio-reactive-led-strip)/[Systematic-LEDs](https://github.com/not-matt/Systematic-LEDs) work.
 I also figured some bias lighting/Ambilight style backlighting effects would be nice to have.  None of the existing solutions here I could find are Windows based and pretty much all of them want you to be running off a raspberry pi (which I'm not).  I decided to try out just doing my own version in the existing python audio visualizer core.  I haven't used python at all prior to this, so my approach is probably naive and certainly less optimal than it could otherwise be, but it works for my purposes.
 
-Could I have just used a seperate pi here for the strips doing backlighting and ditched the ESP8266?  Sure, but it's fun to have them all be able to sync up for audio and all have the same general functionality.
+Could I have just used a raspberry pi here for the strips doing backlighting and ditched the ESP8266?  Sure, but it's fun to have them all be able to sync up for audio and all have the same general functionality including automation.  If a pure backlighting solution more fits your bill, there are options out there.
 
 ## Original sources
 This stuff is 90% the work of the original authors, I just crammed them all together and added some functionality and features here and there.
@@ -74,6 +74,8 @@ Investigate higher performance screen grabbing techniques.
 [Please refer to Tasmota Here for the firmware](https://github.com/arendst/Sonoff-Tasmota)
 
 [For the LED strips, please refer to these instructions regarding installation](https://github.com/scottlawsonbc/audio-reactive-led-strip)
+
+Note that with my SK6812 strips, I required both DMA (via the RX pin) and overclocking to 160Mhz for a stable error-free experience.  It is set up like this by default.
 
 [Home Assistant](https://www.home-assistant.io/)
 
