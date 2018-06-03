@@ -452,7 +452,6 @@ void Ws2812Audio()
     flDimmer = 0.0f;
   }
 
-
   // With UDP and TCP stuff active (mqtt/webserver) heap leaked
   // constantly.  Since we only do UDP while active, this is
   // no longer a concern.
@@ -471,11 +470,7 @@ void Ws2812Audio()
   // If we have a pixel packet, do stuff!
   if ( AudioPortUdp.parsePacket() )
   {
-    //Serial.print( "2" );
     int len = AudioPortUdp.read(packetBuffer, BUFFER_LEN );
-
-    //Serial.print( "Length : " );
-    //Serial.println( len );
 
     uint8 nPixel_count = len / 3;
 
@@ -488,27 +483,17 @@ void Ws2812Audio()
     nMaxPixels =  max( nMaxPixels, nPixel_count );
     float flPixelWidth = ( (float)Settings.light_pixels / (float)nMaxPixels);
     packetBuffer[len] = 0;
-    //strip->ClearTo(0); // Reset strip
-    if ( nDebugLevel > 191 )
-    {
-      Serial.print( "Got Packet : " );
-      Serial.println( len );
-    }
 
-    uint8_t N = 0;
+    float flSubPixel = flPixelWidth>1.0?flPixelWidth:1.0;
+    int nPrevPixel = -1;
+    int nCurrentPixel = 0;
     for(int i = 0; i < len; i+=3)
     {
-        //Serial.print( "3" );
         if ( i + 2 > len )
         {
           Serial.println( "WTF!?!  Outside bounds of LED count!!" );
           break;
         }
-
-        // We try to establish the max pixels based on the last pixel
-        // we get sent, but for sanity checking, we max it with the pixels
-        // we're trying to set...
-        nMaxPixels = max( nMaxPixels, N );
 
         // Fade out based on dimmer value
         c.R = (uint8_t)(packetBuffer[i] * flDimmer);
@@ -516,51 +501,29 @@ void Ws2812Audio()
         c.B = (uint8_t)(packetBuffer[i+2] * flDimmer);
 
         // Interpolate across our real pixel count
-        int nStartPixel = ceil( N * flPixelWidth );
-        int nCurrentPixel = nStartPixel;
-        int nLastPixel = max( -1, (int)ceil( (N - 1) * flPixelWidth ) );
+        nCurrentPixel += int( flSubPixel );
+        flSubPixel -= int( flSubPixel );
+        flSubPixel += flPixelWidth;
 #ifdef SPEED
-        strip->ClearTo( c, nStartPixel, nLastPixel );
+        strip->ClearTo( c, nCurrentPixel, nPrevPixel );
 #else
         // pct to lerp per pixel
-        float flPct = 1.0f / (float)max( 1, nStartPixel - nLastPixel );
+        float flPct = 1.0f / (float)max( 1, nCurrentPixel - nPrevPixel );
         float flT = 0.0f;
-        for ( int nCurrentPixel = nStartPixel; nCurrentPixel > nLastPixel; nCurrentPixel-- )
+        for ( int nPixel = nCurrentPixel; nPixel > nPrevPixel; nPixel-- )
         {
-          //Serial.print( nCurrentPixel );
-          color = color.LinearBlend( c, strip->GetPixelColor(max( 0, min( (int)Settings.light_pixels, nLastPixel ) ) ), flT );
-          strip->SetPixelColor( nCurrentPixel, color );
-          if ( nDebugLevel > 250 )
-          {
-            Serial.print( "Loop : " );
-            Serial.print( i );
-            Serial.print( " Pixel : " );
-            Serial.print( nCurrentPixel );
-            Serial.print( " Start Pixel : " );
-            Serial.print( nStartPixel );
-            Serial.print( " Last Pixel : " );
-            Serial.print( nLastPixel );
-            Serial.print( " Max Pixel : " );
-            Serial.print( nMaxPixels );
-            Serial.print( " flt : " );
-            Serial.print( flT );
-            Serial.print( " flPct : " );
-            Serial.print( flPct );
-            Serial.print( " Color : " );
-            Serial.print( color.R );
-            Serial.print( color.G );
-            Serial.println( color.B );
-          }
+          color = color.LinearBlend( c, strip->GetPixelColor(max( 0, min( (int)Settings.light_pixels, nPrevPixel ) ) ), flT );
+          strip->SetPixelColor( nPixel, color );
           flT += flPct;
         }
 #endif
-		    N++;
+        nPrevPixel = nCurrentPixel;
         delay(0);
     }
     fpsCounter++;
-    //Serial.print( "Start " );
+
     strip->Show();
-    //Serial.print( "End " );
+
   }
   delay(0);
 
@@ -569,7 +532,7 @@ void Ws2812Audio()
       //Serial.print( "7" );
       // feed the watchdog
       OsWatchLoop();
-      //Serial.print( "8" );
+
       secondTimer = millis();
 
       if ( nDebugLevel > 15 )

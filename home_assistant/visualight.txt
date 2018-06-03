@@ -29,6 +29,7 @@ group:
       - input_number.slider_fx_speed
       - input_number.slider_fx_decay
       - input_number.slider_fx_blur
+      - input_number.slider_fx_width
       - input_number.slider_fx_r_multiplier
       - input_number.slider_fx_g_multiplier
       - input_number.slider_fx_b_multiplier
@@ -133,20 +134,7 @@ input_select:
   led_fx_mode:
     name: FX Mode
     options:
-      - 'Visualight'
-      - 'Scroll' 
-      - 'Energy'
-      - 'Spectrum'
-      - 'Power'
-      - 'Wavelength'
-      - 'Beat'
-      - 'Wave'
-      - 'Bars'
-      - 'Pulse'
-      - 'Single'
-      - 'Fade'
-      - 'Gradient'
-      - 'Calibration'
+      - ''
     icon: mdi:theme-light-dark
   led_fx_capture_quality:
     name: Capture Scaling Quality
@@ -206,6 +194,11 @@ input_number:
     min: 0.3
     max: 1.0
     step: 0.001
+  slider_fx_width:
+    name: "Width"
+    min: 0
+    max: 25
+    step: 1
   slider_fx_blur:
     name: "Blur"
     #initial: 1.0
@@ -274,6 +267,17 @@ switch:
 automation:
 
 # These automations read the options from the visualizer and populate the input_selects
+  - alias: Fill out effect input select
+    initial_state: 'on'
+    hide_entity: True  
+    trigger:
+      platform: mqtt
+      topic: "stat/visualizer/ESP8266/effect_options"
+    action:
+      - service_template: python_script.set_input_options
+        data_template:
+          entity_id: input_select.led_fx_mode
+          options: '{{ trigger.payload }}'
   - alias: Fill out microphone input select
     initial_state: 'on'
     hide_entity: True  
@@ -429,6 +433,9 @@ automation:
     trigger:
       platform: mqtt
       topic: "stat/visualizer/monitor/effect/mode"
+    condition: 
+      condition: template
+      value_template: "{{( as_timestamp(now())| int - as_timestamp(states.automation.set_led_fx_mode_selector.attributes.last_triggered ) | int > 1 ) }}"
     action:
      - service: input_select.select_option
        data_template:
@@ -441,6 +448,9 @@ automation:
     trigger:
       platform: state
       entity_id: input_select.led_fx_mode
+    condition:
+      condition: template
+      value_template: '{{(as_timestamp(now())| int - as_timestamp(states.automation.set_led_fx_mode.attributes.last_triggered) | int > 1 ) }}'
     action:
       service: mqtt.publish
       data_template:
@@ -565,6 +575,30 @@ automation:
       data_template:
         topic: "cmnd/visualizer/monitor/effect/decay"
         payload: "{{ ( trigger.to_state.state | float  * 1000 ) | int }}"        
+
+  - alias: Set LED FX Width Selector
+    initial_state: 'on'
+    hide_entity: True
+    trigger:
+      platform: mqtt
+      topic: "stat/visualizer/ESP8266/effect/width"
+    action:
+       service: input_number.set_value
+       data_template:
+        entity_id: input_number.slider_fx_width
+        value: "{{ trigger.payload | int }}"
+  
+  - alias: Set LED FX Width
+    initial_state: 'on'
+    hide_entity: True
+    trigger:
+      platform: state
+      entity_id: input_number.slider_fx_decay
+    action:
+      service: mqtt.publish
+      data_template:
+        topic: "cmnd/visualizer/ESP8266/effect/width"
+        payload: "{{ trigger.to_state.state | int }}"
 
   - alias: Set LED FX Blur Selector
     initial_state: 'on'

@@ -201,10 +201,11 @@ class Visualizer():
                         "Single":self.visualize_single,
                         "Fade":self.visualize_fade,
                         "Gradient":self.visualize_gradient,
-                        "Calibration": self.visualize_calibration}
+                        "Calibration": self.visualize_calibration,
+                        "Larson Scanner": self.visualize_larson_scanner}
         # List of all the visualisation effects that aren't audio reactive.
         # These will still display when no music is playing.
-        self.non_reactive_effects = ["Single", "Gradient", "Fade", "Calibration"]
+        self.non_reactive_effects = ["Single", "Gradient", "Fade", "Calibration", "Larson Scanner"]
         self.prev_effect = None
         # Setup for frequency detection algorithm
         self.freq_channel_history = 40
@@ -264,14 +265,14 @@ class Visualizer():
         # 1 - To make it easy to add options to your effects for the user
         # 2 - To give a consistent GUI for the user. If every options page was set out differently it would all be a mess
         self.dynamic_effects_config = {"Energy":[["blur", "Blur", "float_slider", (0.1,4.0,0.1)],
-                                                 ["scale", "Scale", "float_slider", (0.4,1.0,0.05)],
+                                                 ["width", "Scale", "slider", (4,10,1)],
                                                  ["r_multiplier", "Red", "float_slider", (0.05,1.0,0.05)],
                                                  ["g_multiplier", "Green", "float_slider", (0.05,1.0,0.05)],
                                                  ["b_multiplier", "Blue", "float_slider", (0.05,1.0,0.05)],
                                                  ["mirror", "Mirror", "checkbox"]],
                                          "Wave":[["color_flash", "Flash Color", "dropdown", config.settings["colors"]],
                                                  ["color", "Wave Color", "dropdown", config.settings["colors"]],
-                                                 ["wipe_len", "Wave Start Length", "slider", (0,config.settings["devices"][self.board]["configuration"]["N_PIXELS"]//4,1)],
+                                                 ["width", "Wave Start Length", "slider", (0,config.settings["devices"][self.board]["configuration"]["N_PIXELS"]//4,1)],
                                                  ["speed", "Wave Speed", "slider", (0,10,1)],
                                                  ["decay", "Flash Decay", "float_slider", (0.1,1.0,0.05)]],
                                      "Spectrum":[["r_multiplier", "Red", "float_slider", (0.05,1.0,0.05)],
@@ -330,7 +331,16 @@ class Visualizer():
                                                  ["reverse", "Reverse", "checkbox"]],
                                   "Calibration":[["r", "Red value", "slider", (0,255,1)],
                                                  ["g", "Green value", "slider", (0,255,1)],
-                                                 ["b", "Blue value", "slider", (0,255,1)]]
+                                                 ["b", "Blue value", "slider", (0,255,1)]],
+                               "Larson Scanner":[["color", "Color", "dropdown", config.settings["colors"]],
+                                                 ["decay", "Decay", "float_slider", (0.0,1.0,0.01)],
+                                                 ["blur", "Blur", "float_slider", (0.0,10.0,0.05)],
+                                                 ["width", "Width", "slider", (1,config.settings["devices"][self.board]["configuration"]["N_PIXELS"]//4,1)],
+                                                 ["roll_speed", "Speed", "float_slider", (0,10,0.0005)],
+                                                 ["mirror", "Mirror", "checkbox"],
+                                                 ["r_multiplier", "Trail Red Multiplier", "float_slider", (0.05,2.0,0.05)],
+                                                 ["g_multiplier", "Trail Green Multiplier", "float_slider", (0.05,2.0,0.05)],
+                                                 ["b_multiplier", "Trail Blue Multiplier", "float_slider", (0.05,2.0,0.05)]]
                                        }
         # Setup for fps counter
         self.frame_counter = 0
@@ -340,6 +350,9 @@ class Visualizer():
         # Setup for "Power" (don't change these)
         self.power_indexes = []
         self.power_brightness = 0
+        self.bounce = 1
+        self.prev_roll = 0
+        
         
         # pre-calculate the number of pixels for width/height of visualization.
         # at 100 pixels with 16:9 screen, this would be 32 horizontal, 18 vertical per side
@@ -549,7 +562,7 @@ class Visualizer():
         y = np.copy(y)
         signal_processers[self.board].gain.update(y)
         y /= signal_processers[self.board].gain.value
-        scale = config.settings["devices"][self.board]["effect_opts"]["Energy"]["scale"]
+        scale = float(config.settings["devices"][self.board]["effect_opts"]["Energy"]["width"])/10.0
         # Scale by the width of the LED strip
         y *= float((config.settings["devices"][self.board]["configuration"]["N_PIXELS"] * scale) - 1)
         y = np.copy(interpolate(y, config.settings["devices"][self.board]["configuration"]["N_PIXELS"] // 2))
@@ -651,7 +664,7 @@ class Visualizer():
             output[0][:]=config.settings["colors"][config.settings["devices"][self.board]["effect_opts"]["Wave"]["color_flash"]][0]
             output[1][:]=config.settings["colors"][config.settings["devices"][self.board]["effect_opts"]["Wave"]["color_flash"]][1]
             output[2][:]=config.settings["colors"][config.settings["devices"][self.board]["effect_opts"]["Wave"]["color_flash"]][2]
-            self.wave_wipe_count = config.settings["devices"][self.board]["effect_opts"]["Wave"]["wipe_len"]
+            self.wave_wipe_count = config.settings["devices"][self.board]["effect_opts"]["Wave"]["width"]
         else:
             output = np.copy(self.prev_output)
             #for i in range(len(self.prev_output)):
@@ -918,7 +931,57 @@ class Visualizer():
                            [config.settings["devices"][self.board]["effect_opts"]["Calibration"]["b"] for i in range(config.settings["devices"][self.board]["configuration"]["N_PIXELS"])]])
         return output
     
+    def visualize_larson_scanner(self):
+        """KITT"""
+        global current_roll
+        truncated_roll = int( current_roll )
+        
+        width = max( 1, config.settings["devices"][self.board]["effect_opts"]["Larson Scanner"]["width"] )
+        decay = config.settings["devices"][self.board]["effect_opts"]["Larson Scanner"]["decay"]
+        blur = config.settings["devices"][self.board]["effect_opts"]["Larson Scanner"]["blur"]
+                
+        output = self.prev_output * decay
+        
+        output[0, :] = output[0, :] * config.settings["devices"][self.board]["effect_opts"]["Larson Scanner"]["r_multiplier"]
+        output[1, :] = output[1, :] * config.settings["devices"][self.board]["effect_opts"]["Larson Scanner"]["g_multiplier"]
+        output[2, :] = output[2, :] * config.settings["devices"][self.board]["effect_opts"]["Larson Scanner"]["b_multiplier"]
+        
+        #output = np.zeros((3,config.settings["devices"][self.board]["configuration"]["N_PIXELS"]))
+        start = truncated_roll
+        end = max( 0, min( config.settings["devices"][self.board]["configuration"]["N_PIXELS"] - 1 , self.prev_roll + width ) )
+        if truncated_roll > self.prev_roll:
+          start = self.prev_roll
+          end =  max( 0, min( config.settings["devices"][self.board]["configuration"]["N_PIXELS"] - 1 , truncated_roll + width ) )
+        output[0][start]=config.settings["colors"][config.settings["devices"][self.board]["effect_opts"]["Larson Scanner"]["color"]][0]
+        output[1][start]=config.settings["colors"][config.settings["devices"][self.board]["effect_opts"]["Larson Scanner"]["color"]][1]
+        output[2][start]=config.settings["colors"][config.settings["devices"][self.board]["effect_opts"]["Larson Scanner"]["color"]][2]
+        count = 1
+        for i in range ( start + 1, end ):
+          output[0][i]=config.settings["colors"][config.settings["devices"][self.board]["effect_opts"]["Larson Scanner"]["color"]][0]
+          output[1][i]=config.settings["colors"][config.settings["devices"][self.board]["effect_opts"]["Larson Scanner"]["color"]][1]
+          output[2][i]=config.settings["colors"][config.settings["devices"][self.board]["effect_opts"]["Larson Scanner"]["color"]][2]
+          count += 1
 
+        if blur > 0.0:
+          output[0, :] = gaussian_filter1d(output[0, :], sigma=blur)
+          output[1, :] = gaussian_filter1d(output[1, :], sigma=blur)
+          output[2, :] = gaussian_filter1d(output[2, :], sigma=blur)
+        
+        self.prev_roll = truncated_roll
+        
+        move = config.settings["devices"][self.board]["effect_opts"]["Larson Scanner"]["roll_speed"]*self.bounce
+        current_roll += move
+        if current_roll < 0 or ( current_roll + width ) > config.settings["devices"][self.board]["configuration"]["N_PIXELS"] - 1 :
+          self.bounce *= -1
+          if current_roll < 0:
+            current_roll *= -1
+            self.prev_roll = 0
+          else:
+            current_roll += ( config.settings["devices"][self.board]["configuration"]["N_PIXELS"] - 1 ) - ( current_roll + width )
+            self.prev_roll = config.settings["devices"][self.board]["configuration"]["N_PIXELS"]
+        if config.settings["devices"][self.board]["effect_opts"]["Larson Scanner"]["mirror"]:
+          output = np.concatenate((output[:, ::-2], output[:, ::2]), axis=1)
+        return output
 		
 class GUI(QMainWindow):
     def __init__(self):

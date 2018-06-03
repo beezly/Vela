@@ -52,11 +52,13 @@ settings = {                                                      # All settings
                      "MQTT_MICROPHONE_TOPIC": "/mic",                                         # Select a microphone command
                      "MQTT_COLOR_OPTIONS_TOPIC": "/color_options",                            # A list of available color options
                      "MQTT_PALETTE_OPTIONS_TOPIC": "/palette_options",                        # A list of available palette options
+                     "MQTT_EFFECT_OPTIONS_TOPIC": "/effect_options",                          # A list of available effect options
                      "MQTT_EFFECT_BASE_TOPIC":          "/effect/",                           # The effect mode by name
                      "MQTT_EFFECT_MODE_TOPIC":          "mode",                               # The effect mode by name
                      "MQTT_EFFECT_SPEED_TOPIC":         "speed",                              # The speed of the effect	
                      "MQTT_EFFECT_BLUR_TOPIC":          "blur",                               # The blur of the effect
                      "MQTT_EFFECT_DECAY_TOPIC":         "decay",                              # The decay of the effect
+                     "MQTT_EFFECT_WIDTH_TOPIC":         "width",                              # The width of the effect
                      "MQTT_EFFECT_MIRROR_TOPIC":        "mirror",                             # Whether to mirror the effect
                      "MQTT_EFFECT_SENSITIVITY_TOPIC":   "sensitivity",                        # The sensitivity of the effect
                      "MQTT_EFFECT_PALETTE_TOPIC":       "palette",                            # The palette of the effect	by name
@@ -121,14 +123,14 @@ settings = {                                                      # All settings
                       # Configurable options for this board's effects go in this dictionary.
                       # Usage: config.settings["devices"][name]["effect_opts"][effect][option]
                       "effect_opts":{"Energy":    {"blur": 1,                       # Amount of blur to apply
-                                                   "scale":0.9,                     # Width of effect on strip
+                                                   "width":9,                       # Width of effect on strip
                                                    "r_multiplier": 1.0,             # How much red
                                                    "mirror": True,                  # Reflect output down centre of strip
                                                    "g_multiplier": 1.0,             # How much green
                                                    "b_multiplier": 1.0},            # How much blue
                                      "Wave":      {"color": "Red",                  # Colour of moving bit
                                                    "color_flash": "White",          # Colour of flashy bit
-                                                   "wipe_len":5,                    # Initial length of colour bit after beat
+                                                   "width":5,                       # Initial length of colour bit after beat
                                                    "decay": 0.7,                    # How quickly the flash fades away 
                                                    "speed":2},                      # Number of pixels added to colour bit every frame
                                      "Spectrum":  {"r_multiplier": 1.0,             # How much red
@@ -138,7 +140,7 @@ settings = {                                                      # All settings
                                                    "color_mode": "Spectral",        # Colour gradient to display
                                                    "mirror": False,                 # Reflect output down centre of strip
                                                    "reverse_grad": False,           # Flip (LR) gradient
-                                                   "reverse": False,         	    # Reverse movement of gradient roll
+                                                   "reverse": False,                # Reverse movement of gradient roll
                                                    "blur": 3.0,                     # Amount of blur to apply
                                                    "flip_lr":False},                # Flip output left-right
                                      "Scroll":    {"sensitivity": 2.0,              # Sensitivity of the effect
@@ -164,7 +166,7 @@ settings = {                                                      # All settings
                                                    "color_mode":"Spectral",         # Multicolour mode to use
                                                    "roll_speed":0,                  # How fast (if at all) to cycle colour colours across strip
                                                    "mirror": False,                 # Mirror down centre of strip
-                                                   "reverse": False,        	    # Reverse movement of gradient roll
+                                                   "reverse": False,                # Reverse movement of gradient roll
                                                    "flip_lr":False},                # Flip output left-right
                                      "Pulse":     {"sensitivity": 0.125,            # Sensitivity of the effect
                                                    "color_mode":"Spectral"          # Multicolour mode to use
@@ -192,7 +194,18 @@ settings = {                                                      # All settings
                                                    "reverse": False},               # Reverse "direction" of fade (r->g->b or r<-g<-b)
                                      "Calibration":{"r": 100,
                                                     "g": 100,
-                                                    "b": 100}
+                                                    "b": 100},
+                                     "Larson Scanner":{
+                                                       "color": "Red",              # Colour of beat flash
+                                                       "decay": 0.25,               # How quickly it fades away
+                                                       "roll_speed": 2,             # How fast it moves
+                                                       "blur": 0.25,                # Fade at the edges
+                                                       "width": 12,                 # Fade at the edges
+                                                       "r_multiplier": 1.0,         # How much red
+                                                       "g_multiplier": 1.0,         # How much green
+                                                       "b_multiplier": 1.0,         # How much blue
+                                                       "mirror": False,             # Mirror down central axis
+                                                      },
                                      }
                                   }
               # Add any additional devices here (copy/paste above with a new name) for it's own visualizer
@@ -257,6 +270,7 @@ settings = {                                                      # All settings
                       "roll_speed"      : "MQTT_EFFECT_SPEED_TOPIC",
                       "blur"            : "MQTT_EFFECT_BLUR_TOPIC",
                       "decay"           : "MQTT_EFFECT_DECAY_TOPIC",
+                      "width"           : "MQTT_EFFECT_WIDTH_TOPIC",
                       "mirror"          : "MQTT_EFFECT_MIRROR_TOPIC",
                       "sensitivity"     : "MQTT_EFFECT_SENSITIVITY_TOPIC",
                       "r_multiplier"    : "MQTT_EFFECT_R_TOPIC",
@@ -291,6 +305,7 @@ settings = {                                                      # All settings
                       "roll_speed"      : 1000,
                       "blur"            : 1000,
                       "decay"           : 1000,
+                      "width"           : 1,
                       "mirror"          : 1,
                       "sensitivity"     : 1000,
                       "r_multiplier"    : 1000,

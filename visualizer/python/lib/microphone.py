@@ -87,7 +87,7 @@ def start_stream(callback):
             adjustment_factor += 0.0005
         sleep_time = desired_sleep + adjustment_factor
         prev_time = time.time()
-        time.sleep( sleep_time )
+        time.sleep( max( 0, sleep_time ) )
       callback(y)
       
       

@@ -14,19 +14,23 @@ boards = {}
 ## This debouncer will ignore a message if it bounced back and forth quickly, making it rest on one state or the other
 debouncer = {}
 def debounce_message( message ):
+  #log( "debouncer received : " + str( message.topic ) )
+  payload = str(message.payload.decode("utf-8"))
   if message.topic in debouncer:
     prev_time = debouncer[message.topic][0]
     prev_payload = debouncer[message.topic][1]
-    
-    if time.time() - prev_time < 0.2:
-      if str(message.payload.decode("utf-8")) is prev_payload:
-        log( ("Debounce Event Detected : " + message.topic +" "+ str( message.payload.decode("utf-8") ) ), 8 )
+      
+    if time.time() - prev_time < 0.5:
+      if payload == prev_payload:
+        log( ("Debounce Event Detected : " + message.topic +" "+ payload ), 5 )
         return True
       else:
+        #log( ("Not Debouncing : " + message.topic +" "+ payload + " Prev : " + prev_payload ), 2 )
         return False
 
-  debouncer[message.topic] = ( time.time(), str(message.payload.decode("utf-8")) )
-  #print( "debouncer : " + str( debouncer ) )
+  debouncer[message.topic] = ( time.time(), payload )
+  #log ( ("Updating Debounce : " + message.topic +" "+ payload ), 2 )
+  #log( "debouncer : " + str( debouncer ) )
   return False
     
     
@@ -272,6 +276,14 @@ def update_input_select_lists( client ):
       color_list += color
     log( "Adding Color Options  : " + str( color_list ), 4 )
     client.publish(MQTT_STAT_Prefix + config.settings["configuration"]["MQTT_COLOR_OPTIONS_TOPIC"], color_list, 1, True )
+
+    effect_list = ''
+    for effect in config.settings["devices"][board]["effect_opts"]:
+      if effect_list != '':
+        effect_list += ','    
+      effect_list += effect
+    log( "Adding Effect Options  : " + str( effect_list ), 4 )
+    client.publish(MQTT_STAT_Prefix + config.settings["configuration"]["MQTT_EFFECT_OPTIONS_TOPIC"], effect_list, 1, True )
       
 def update_effect_setting( client, board, setting ):
     MQTT_STAT_Prefix = ( config.settings["configuration"]["MQTT_STAT_PREFIX"] + str( board ) )
@@ -305,6 +317,7 @@ def update_mqtt_setting_status( client ):
     update_effect_setting( client, board, "roll_speed" )
     update_effect_setting( client, board, "blur" )
     update_effect_setting( client, board, "decay" )
+    update_effect_setting( client, board, "width" )
     update_effect_setting( client, board, "mirror" )
     update_effect_setting( client, board, "sensitivity" )
     update_effect_setting( client, board, "r_multiplier" )
