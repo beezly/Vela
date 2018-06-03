@@ -272,7 +272,7 @@ automation:
     hide_entity: True  
     trigger:
       platform: mqtt
-      topic: "stat/visualizer/ESP8266/effect_options"
+      topic: "stat/visualizer/monitor/effect_options"
     action:
       - service_template: python_script.set_input_options
         data_template:
@@ -581,7 +581,7 @@ automation:
     hide_entity: True
     trigger:
       platform: mqtt
-      topic: "stat/visualizer/ESP8266/effect/width"
+      topic: "stat/visualizer/monitor/effect/width"
     action:
        service: input_number.set_value
        data_template:
@@ -597,7 +597,7 @@ automation:
     action:
       service: mqtt.publish
       data_template:
-        topic: "cmnd/visualizer/ESP8266/effect/width"
+        topic: "cmnd/visualizer/monitor/effect/width"
         payload: "{{ trigger.to_state.state | int }}"
 
   - alias: Set LED FX Blur Selector
