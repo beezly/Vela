@@ -66,7 +66,10 @@ As such, each strip registers itself with the visualizer and gets its own unicas
 ## Future steps
 More reactive and non-reactive FX.  
 Create a custom component for Home Assistant rather than a collection of inputs and automations.
+
 Investigate higher performance screen grabbing techniques.
+
+Add room lighting support - MQTT based zones for non-strip lights to integrate into the general lighting effects.
 
 ## Installation
 
