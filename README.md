@@ -66,16 +66,21 @@ As such, each strip registers itself with the visualizer and gets its own unicas
 ## Future steps
 More reactive and non-reactive FX.  
 Create a custom component for Home Assistant rather than a collection of inputs and automations.
+
 Investigate higher performance screen grabbing techniques.
+
+Add room lighting support - MQTT based zones for non-strip lights to integrate into the general lighting effects.
 
 ## Installation
 
 
 [Please refer to Tasmota Here for the firmware](https://github.com/arendst/Sonoff-Tasmota)
 
+The included files are set up to work with PlatformIO.  I recommend this, as does the base Sonoff-Tasmota, over the default Arduino IDE. 
+
 [For the LED strips, please refer to these instructions regarding installation](https://github.com/scottlawsonbc/audio-reactive-led-strip)
 
-Note that with my SK6812 strips, I required both DMA (via the RX pin) and overclocking to 160Mhz for a stable error-free experience.  It is set up like this by default.
+Note that with my SK6812 strips, I required both DMA (via the RX pin) and overclocking to 160Mhz for a stable error-free experience.  It is set up like this by default for PlatformIO.  If using the Arduino IDE, you will need to select the speed option manually.
 
 [Home Assistant](https://www.home-assistant.io/)
 
@@ -88,7 +93,24 @@ The LED Strip layout runs clockwise around (when viewing the display from the fr
 
 ## Setup
 
-Install the firmware onto your Sonoff or ESP8266 devices which are wired into a WS2812B or SK6812 LED Strip as normal.
+Install the firmware onto your Sonoff or ESP8266 devices which are wired into a WS2812B or SK6812 LED Strip as normal.  You'll have to make changes to the user_config.h file to set up your wifi and mqtt locations, but you'll also find this new block of options :
+
+```
+#define MQTT_VISUALIZER_PREFIX    "visualizer"      // ala "cmnd/visualizer/[device]/lights/[name]/ip" - change this if you want to split out multiple controllers (pc's running the visualizer software)
+#define MQTT_LIGHTS_TOPIC         "lights"          // the lights topic for registering strips - leave this alone
+#define MQTT_LIGHTS_IP_TOPIC      "ip"              // the ip topic for registering strips - leave this alone
+#define MQTT_LIGHTS_STATE_TOPIC   "state"           // the state topic for registering strips - leave this alone
+#define MQTT_AUDIO_MODE_TOPIC     "cmnd/audio/mode" // on its way to deprecation?
+#define MQTT_LIGHT_FX_TOPIC       "monitor"         // Set this to the visualizer 'device' you want to register to - so each visualizer (noted as visualizer above) can have multiple devices - ie, this topic
+#define AUDIO_TIMEOUT             15                // If we don't receive any signal from the visualizer for this long, abort and go back normal operation (restore web server, mqtt)
+```
+
+In addition, there are two new options you can set via commands (either via the webserver console or MQTT) :
+
+```
+fxdevice [name]  -- this sets the name of the device you want to connect to on the visualizer side - it's the MQTT_LIGHT_FX_TOPIC in user_config.h
+fxenable [on/off]  -- this turns control over to the visualizer.  Once on, you'll lose connection to the webserver and mqtt access points and must control things via the visualizer or home assistant
+```
 
 The easiest Python setup from scracth is to download Anaconda 3.6 or latest.
 Open an Anaconda prompt and enter the following to install everything you'll need :
@@ -97,8 +119,7 @@ Open an Anaconda prompt and enter the following to install everything you'll nee
 conda create -n visualizer
 activate visualizer
 conda install numpy scipy pyqtgraph
-pip install paho-mqtt
-pip install pyaudio
+pip install paho-mqtt pyaudio pillow win32gui pywin32 comtypes
 ```
 
 The MQTT hierarchy used for the various elements is as follows:
@@ -114,16 +135,16 @@ Each Instance shares all the effect settings across all strips it owns.
 So you can have multiple sonoff strips per instance, multiple instances per visualizer, and multiple visualizers, provided they're all uniquely named.
 
 
-Pick a name for each seperate instance you want.  The default is "monitor".  
+Pick a name for each seperate device instance you want.  The default is "monitor", as noted in the user_config.h above, in the visualizer config.py, and the home assistant widgets.
 
-Each sonoff will subscribe to a specific instance, and you may change this in the Sonoff Console with:
+Each sonoff will subscribe to a specific device instance as specified in the user_cofig.h noted above, and you may change this in the Sonoff webserver console or via MQTT with this command:
 
 ```
 fxdevice [name]
 ```
 
-Edit the config.py file to reflect the name of each "device" visualizer you want.  Again the default is "monitor".
-Edit the mqtt address to be your broker.
+
+In the visualizer folder, you'll find the python directory which contains the visualizer program.  Edit the python/lib/config.py file to reflect the name of each "device" visualizer you set above (or left alone as "monitor").  You'll also need to set up your MQTT broker address in the same config.py.  Various other options are available to set here if you want to dig in...
 
 The Home Assistant directory contains configuration entries to control the visualizer.  The mqtt entries should be fixed to reflect both the device name of your visualizer and the name of your sonoff.
 
@@ -135,11 +156,28 @@ cd [my visualizer install directory]
 python main.py
 ```
 
-Once the visualizer is running in the sonoff console type:
+You can create a shortcut link to go directly here by creating a shortcut to the anaconda prompt and then editing the properties and adding the following :
+
+```
+&& activate visualizer && python [PATH TO WHERE YOU INSTALLED]\visualizer\python\main.py
+```
+
+The entire shortcut link will look something like :
+
+```
+%windir%\System32\cmd.exe “/K” C:\Users\[yourusername]\AppData\Local\Continuum\anaconda3\Scripts\activate.bat C:\Users\[yourusername]\AppData\Local\Continuum\anaconda3 && activate visualizer && python C:[pathtoyourinstall]\Vela\visualizer\python\main.py
+```
+
+You can then just click on this to launch the visualizer.
+
+Once the visualizer is running you can start sending the visualization to your LEDs by activating the FX mode on your strip.  This can be done via the Home Assistant toggle switch provided or by sending the following command in the sonoff webserver conole or via MQTT:
+
 ```
 fxenable on
 ```
+
 to start accepting input from the visualizer.
+
 
 The Home Assitant controls can be used to activate or deactive each strip and change settings.
 
