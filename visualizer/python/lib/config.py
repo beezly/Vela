@@ -39,6 +39,14 @@ settings = {                                                      # All settings
                      "USE_MQTT_LED_STATE" : False,                                            # If true will set LED state to an MQTT topic.  Not really fast enough for realtime audio, but could be useful for other stuff?  Deprecated...
                      "MQTT_IP": "YOUR_MQTT_ADDRESS",                                          # MQTT IP
                      "MQTT_PORT": 1883,                                                       # MQTT Port
+                     "USE_LIFX": False,                                                       # Should we broadcast visualight zones to lifx?
+                     "MULTICAST_UDP_IP": "225.255.255.240",                                   # Multicast UDP IP
+                     "SCREENGRAB_HEIGHT_SCALE": 10,                                           # The output height for visualight
+                     "SCREENGRAB_WIDTH_SCALE": 10,                                            # The output width for visualight
+                     "SCREENGRAB_MAX_FPS": 30,                                                # Screengrabbing will be capped at this framerate for performance reasons
+                     },
+                     
+    "MQTT":{
                      "MQTT_CMND_PREFIX":  "cmnd/visualizer/",                                 # The prefix for mqtt commands
                      "MQTT_STAT_PREFIX":  "stat/visualizer/",                                 # The prefix used for mqtt status
                      "MQTT_LIGHT_TOPIC":  "/data",                                            # Used if LED STATE is set to true - the same packet we'd set over UDP is set here.  
@@ -78,6 +86,19 @@ settings = {                                                      # All settings
                      "MQTT_EFFECT_REVERSE_TOPIC":       "reverse",                            # Reverse Effect
                      "MQTT_EFFECT_FLIP_LR_TOPIC":       "flip_lr",                            # Flip L/R
                      "MQTT_EFFECT_QUALITY_TOPIC":       "quality",                            # Capture Quality
+                     "MQTT_ZONE_BASE_TOPIC":            "/zones/",                            # Base topic for zones
+                     "MQTT_ZONE_GLOBAL_TOPIC":          "zone_global",                        # General Avg Color 
+                     "MQTT_ZONE_CENTER_TOPIC":          "zone_center",                        # Center of the Screen Avg Color 
+                     "MQTT_ZONE_TOP_TOPIC":             "zone_top",                           # Top Avg Color
+                     "MQTT_ZONE_RIGHT_TOPIC":           "zone_right",                         # Right Avg Color
+                     "MQTT_ZONE_BOT_TOPIC":             "zone_bot",                           # Bot Avg Color
+                     "MQTT_ZONE_LEFT_TOPIC":            "zone_left",                          # Left Avg Color                    
+                     "MQTT_ZONE_GLOBAL_CUSTOM_TOPIC":   None,                                 # This topic is a complete MQTT topic for a custom recipient Example : "cmnd/sonoff_led/color"
+                     "MQTT_ZONE_CENTER_CUSTOM_TOPIC":   None,                                 # This topic is a complete MQTT topic for a custom recipient Output in Hex : #FF0000
+                     "MQTT_ZONE_TOP_CUSTOM_TOPIC":      None,                                 # This topic is a complete MQTT topic for a custom recipient
+                     "MQTT_ZONE_RIGHT_CUSTOM_TOPIC":    None,                                 # This topic is a complete MQTT topic for a custom recipient
+                     "MQTT_ZONE_BOT_CUSTOM_TOPIC":      None,                                 # This topic is a complete MQTT topic for a custom recipient
+                     "MQTT_ZONE_LEFT_CUSTOM_TOPIC":     None,                                 # This topic is a complete MQTT topic for a custom recipient
                      "MQTT_ENABLE_PAYLOAD_ON":  "on",                                         # Payload for enabling audio mode
                      "MQTT_ENABLE_PAYLOAD_OFF": "off",                                        # Payload for disabling audio mode
                      "MQTT_AVAILABLE_LIGHTS_ARRAY_TOPIC": "/lights/",                         # LED Strips opt into audio mode via this topic via IP topic and available/unavailable payload
@@ -88,13 +109,25 @@ settings = {                                                      # All settings
                      "MQTT_MONITOR_PAYLOAD_ON":  "on",                                        # Payload for monitor on
                      "MQTT_MONITOR_PAYLOAD_OFF": "off",                                       # Payload for monitor off
                      "MQTT_MONITOR_PAYLOAD_SUSPEND": "sleep",                                 # Payload for monitor sleep
-                     "MQTT_TOPIC_QOS": 0,                                                     # QOS for topic
-                     "MULTICAST_UDP_IP": "225.255.255.240",                                   # Multicast UDP IP
-                     "SCREENGRAB_HEIGHT_SCALE": 10,                                           # The output height for visualight
-                     "SCREENGRAB_WIDTH_SCALE": 10,                                            # The output width for visualight
-                     "SCREENGRAB_MAX_FPS": 30,                                                # Screengrabbing will be capped at this framerate for performance reasons
-                     },
-
+                     "MQTT_TOPIC_QOS": 0,                                                     # QOS for topic    
+            },
+    "LiFX":{
+                     "LIFX_NUMLIGHTS": None,                  # If the number of lights is known/specified it'll speed up discovery or None
+                     "LIFX_DISCOVER_LIGHTS": False,           # Discover and list available lights - takes some time, directly adding lights by mac/ip is faster
+                     "LIFX_GLOBAL_GROUP": None,               # Group name for the global light Ex: "Living Room" will trigger discovery
+                     "LIFX_CENTER_GROUP": None,               # Group name for the center light
+                     "LIFX_TOP_GROUP": None,                  # Group name for the top light
+                     "LIFX_RIGHT_GROUP": None,                # Group name for the right light
+                     "LIFX_BOT_GROUP": None,                  # Group name for the bot light
+                     "LIFX_LEFT_GROUP": None,                 # Group name for the left light
+                     "LIFX_GLOBAL_LIGHTS": None,              # List of Lights for the global light Ex: ["left light", "right light"] by name will trigger discovery
+                     "LIFX_CENTER_LIGHTS": None,              # List of Lights for the center light or [["12:34:56:78:9a:bc", "192.168.0.2"]] for direct access
+                     "LIFX_TOP_LIGHTS": None,                 # List of Lights for the top light
+                     "LIFX_RIGHT_LIGHTS": None,               # List of Lights for the right light
+                     "LIFX_BOT_LIGHTS": None,                 # List of Lights for the bot light
+                     "LIFX_LEFT_LIGHTS": None,                # List of Lights for the left light
+            },
+                     
     "GUI_opts":{"Graphs":True,                                    # Which parts of the gui to show
                 "Reactive Effect Buttons":True,
                 "Non Reactive Effect Buttons":True,
@@ -182,7 +215,8 @@ settings = {                                                      # All settings
                                                    "decay": 0.8,                    # How much interpolation to do between frames
                                                    "roll": 34,                      # Offet for strip if it's not top left corner as the start - this will also be offset by the N_PIXEL_OFFSET, so alternatively you can set it globally there
                                                    "capturefps": 24,                # Maximum capture speed.  Will override the global one
-                                                   "quality":"Lanczos"              # The quality and therby speed of scaling, selected from the quality list below
+                                                   "quality":"Lanczos",             # The quality and therby speed of scaling, selected from the quality list below
+                                                   "output_zones":False,            # Send general colored zones to MQTT/LiFX - for controlling discrete lights outside of the strip
                                                    },
                                      "Gradient":  {"color_mode":"Spectral",         # Colour gradient to display
                                                    "roll_speed": 0,                 # How fast (if at all) to cycle colour colours across strip

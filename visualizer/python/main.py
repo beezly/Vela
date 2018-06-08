@@ -19,6 +19,7 @@ from collections import defaultdict
 from PIL import Image
 from PIL import ImageEnhance
 from PIL import ImageOps
+from PIL import ImageStat
 #alternate screengrabbing techniques
 #mss and gtk
 #if 0:
@@ -67,7 +68,7 @@ class POWERBROADCAST_SETTING(Structure):
 class Display_Status():
     def __init__(self):
       if ( config.settings["configuration"]["CHECK_DISPLAY"] ):
-        log("*** DISPLAY STATUS STARTING ***")
+        #log("*** DISPLAY STATUS STARTING ***")
         hinst = win32api.GetModuleHandle(None)
         wndclass = win32gui.WNDCLASS()
         wndclass.hInstance = hinst
@@ -119,6 +120,8 @@ class Display_Status():
         time.sleep( 4 )
         
 def wndproc(hwnd, msg, wparam, lparam):
+    if not config.settings["configuration"]["USE_MQTT"]:
+        return
     if msg == win32con.WM_POWERBROADCAST:
         if wparam == win32con.PBT_APMPOWERSTATUSCHANGE:
             log('Power status has changed', 3 )
@@ -129,8 +132,8 @@ def wndproc(hwnd, msg, wparam, lparam):
         if wparam == win32con.PBT_APMSUSPEND:
             log('System suspend', 3)
             for board in config.settings["devices"]:
-              mqtt_topic = config.settings["configuration"]["MQTT_STAT_PREFIX"] + board + config.settings["configuration"]["MQTT_DISPLAY_TOPIC"]
-              mqtt_client.publish( mqtt_topic, config.settings["configuration"]["MQTT_MONITOR_PAYLOAD_OFF"] )
+              mqtt_topic = config.settings["MQTT"]["MQTT_STAT_PREFIX"] + board + config.settings["MQTT"]["MQTT_DISPLAY_TOPIC"]
+              mqtt_client.publish( mqtt_topic, config.settings["MQTT"]["MQTT_MONITOR_PAYLOAD_OFF"] )
         if wparam == PBT_POWERSETTINGCHANGE:
             log('Power setting changed...', 3)
             settings = cast(lparam, POINTER(POWERBROADCAST_SETTING)).contents
@@ -139,16 +142,19 @@ def wndproc(hwnd, msg, wparam, lparam):
             data = settings.Data
             if power_setting == GUID_CONSOLE_DISPLAY_STATE:
               for board in config.settings["devices"]:
-                  mqtt_topic = config.settings["configuration"]["MQTT_STAT_PREFIX"] + board + config.settings["configuration"]["MQTT_DISPLAY_TOPIC"]
+                  mqtt_topic = config.settings["MQTT"]["MQTT_STAT_PREFIX"] + board + config.settings["MQTT"]["MQTT_DISPLAY_TOPIC"]
                   if data == 0: 
                       log('Display off', 3)
-                      mqtt_client.publish( mqtt_topic, config.settings["configuration"]["MQTT_MONITOR_PAYLOAD_OFF"] )
+                      mqtt_client.publish( mqtt_topic, config.settings["MQTT"]["MQTT_MONITOR_PAYLOAD_OFF"] )
+                      sv.current_status = 'off'
                   if data == 1: 
                       log('Display on', 3)
-                      mqtt_client.publish( mqtt_topic, config.settings["configuration"]["MQTT_MONITOR_PAYLOAD_ON"] )
+                      mqtt_client.publish( mqtt_topic, config.settings["MQTT"]["MQTT_MONITOR_PAYLOAD_ON"] )
+                      sv.current_status = 'on'
                   if data == 2: 
                       log('Display dimmed', 3)
-                      mqtt_client.publish( mqtt_topic, config.settings["configuration"]["MQTT_MONITOR_PAYLOAD_SUSPEND"] )
+                      mqtt_client.publish( mqtt_topic, config.settings["MQTT"]["MQTT_MONITOR_PAYLOAD_SUSPEND"] )
+                      sv.current_status = 'sleep'
             elif power_setting == GUID_ACDC_POWER_SOURCE:
                 if data == 0: log('AC power', 3)
                 if data == 1: log('Battery power', 3)
@@ -157,13 +163,15 @@ def wndproc(hwnd, msg, wparam, lparam):
                 log('battery remaining: %s' % data, 3)
             elif power_setting == GUID_MONITOR_POWER_ON:
               for board in config.settings["devices"]:
-                  mqtt_topic = config.settings["configuration"]["MQTT_STAT_PREFIX"] + board + config.settings["configuration"]["MQTT_DISPLAY_TOPIC"]
+                  mqtt_topic = config.settings["MQTT"]["MQTT_STAT_PREFIX"] + board + config.settings["MQTT"]["MQTT_DISPLAY_TOPIC"]
                   if data == 0:
                       log('Monitor off', 3)
-                      mqtt_client.publish( mqtt_topic, config.settings["configuration"]["MQTT_MONITOR_PAYLOAD_OFF"] )
+                      mqtt_client.publish( mqtt_topic, config.settings["MQTT"]["MQTT_MONITOR_PAYLOAD_OFF"] )
+                      sv.current_status = 'off'
                   if data == 1:
                       log('Monitor on', 3)
-                      mqtt_client.publish( mqtt_topic, config.settings["configuration"]["MQTT_MONITOR_PAYLOAD_ON"] )
+                      mqtt_client.publish( mqtt_topic, config.settings["MQTT"]["MQTT_MONITOR_PAYLOAD_ON"] )
+                      sv.current_status = 'on'
             elif power_setting == GUID_SYSTEM_AWAYMODE:
                 if data == 0: log('Exiting away mode', 3)
                 if data == 1: log('Entering away mode', 3)
@@ -319,7 +327,8 @@ class Visualizer():
                                                  ["sensitivity", "Brightness", "float_slider", (0.01,2.0,0.01)],
                                                  ["roll", "Position Offset", "slider", (0,256,1)],
                                                  ["capturefps", "Capture FPS", "slider", (1,60,1)],
-                                                 ["quality", "Quality", "dropdown", config.settings["qualities"]]
+                                                 ["quality", "Quality", "dropdown", config.settings["qualities"]],
+                                                 ["output_zones", "Output Colors to Zones", "checkbox"]
                                                  ],
                                      "Gradient":[["color_mode", "Color Mode", "dropdown", config.settings["gradients"]],
                                                  ["roll_speed", "Roll Speed", "float_slider", (0,8,0.0005)],
@@ -352,7 +361,13 @@ class Visualizer():
         self.power_brightness = 0
         self.bounce = 1
         self.prev_roll = 0
-        
+        self.zone_avg_total = 0
+        self.zone_avg_center = 0
+        self.zone_avg_top = 0
+        self.zone_avg_right = 0
+        self.zone_avg_bot = 0
+        self.zone_avg_left = 0
+        self.zone_last_update = 0
         
         # pre-calculate the number of pixels for width/height of visualization.
         # at 100 pixels with 16:9 screen, this would be 32 horizontal, 18 vertical per side
@@ -812,7 +827,13 @@ class Visualizer():
           #output = (2 * output)
           
         return output
+       
 
+    def RollingAvg( self, sample_count, avg, sample ):
+        avg -= avg/sample_count;
+        avg += sample/sample_count;
+        return avg
+    
     def visualize_visualight(self, y):
         """My version of ambilight"""
         #time1 = time.time()
@@ -831,9 +852,9 @@ class Visualizer():
         im = ImageEnhance.Color(im).enhance( config.settings["devices"][self.board]["effect_opts"]["Visualight"]["saturation"] )
         im = ImageEnhance.Contrast(im).enhance( config.settings["devices"][self.board]["effect_opts"]["Visualight"]["contrast"] )        
 
-        #FIXME : too slow? -find alternative
+        #FIXME : too slow - using np gaussian instead...
         #im = im.filter(ImageFilter.GaussianBlur(config.settings["devices"][self.board]["effect_opts"]["Visualight"]["blur"]) )
-    
+
         # #0.3 seems good 
         im = ImageEnhance.Brightness(im).enhance( config.settings["devices"][self.board]["effect_opts"]["Visualight"]["sensitivity"] )
         
@@ -856,16 +877,42 @@ class Visualizer():
         left = np.column_stack( np.array( imLft.getdata(), np.uint8 ) )
         output = np.concatenate( (top, right, bot, left), axis=1 )
         
+        # Could do some audio reactive stuff here to mix with borders...
+        
         # must adjust position before blending with previous
         output = np.roll( output, config.settings["devices"][self.board]["effect_opts"]["Visualight"]["roll"], axis=1)
         
+        output = gaussian_filter1d(output, sigma=config.settings["devices"][self.board]["effect_opts"]["Visualight"]["blur"])
+
         decay = config.settings["devices"][self.board]["effect_opts"]["Visualight"]["decay"]        
         output = np.add( output * decay, self.prev_output * (1 - decay ) )
 
-
-
-        #log( "Tranform into pixels : " + str( time.time() - time2 ), 10 )
-        #time2 = time.time()
+        if ( config.settings["devices"][self.board]["effect_opts"]["Visualight"]["output_zones"] ):
+          sample_size = 30
+          transition_time_ms = 10
+          
+          self.zone_avg_center = self.RollingAvg( sample_size, self.zone_avg_total,  np.column_stack( np.array( im.crop( (self.pixel_w * 0.4, self.pixel_h * 0.4, self.pixel_w * 0.6 , self.pixel_h * 0.6 ) ).getdata(), np.uint8 ) ).mean(axis=1) )
+          self.zone_avg_total = self.RollingAvg( sample_size, self.zone_avg_total, output.mean(axis=1) )
+          self.zone_avg_top = self.RollingAvg( sample_size, self.zone_avg_top, top.mean(axis=1) ) 
+          self.zone_avg_right = self.RollingAvg( sample_size, self.zone_avg_right, right.mean(axis=1) )
+          self.zone_avg_bot = self.RollingAvg( sample_size, self.zone_avg_bot, bot.mean(axis=1) ) 
+          self.zone_avg_left = self.RollingAvg( sample_size, self.zone_avg_left, left.mean(axis=1) )
+          if time.time() - self.zone_last_update > 0.25:
+            self.zone_last_update = time.time()
+            mqtt.update_zones( mqtt_client, self )
+            
+          if config.settings["configuration"]["USE_LIFX"]:
+            # This is slower than my gut says it should be - all within the lifx library
+            # Need to look at how to optimize it - perhaps it can sit on its own thread
+            # It re-initializes UDP sockets on each send, perhaps those should remain
+            #time2 = time.time()
+            mqtt.update_zones.group_global.set_color( mqtt.RGBtoHSBK( self.zone_avg_total ), transition_time_ms, True ) 
+            mqtt.update_zones.group_center.set_color( mqtt.RGBtoHSBK( self.zone_avg_center ), transition_time_ms, True ) 
+            mqtt.update_zones.group_top.set_color( mqtt.RGBtoHSBK( self.zone_avg_top ) , transition_time_ms, True ) 
+            mqtt.update_zones.group_right.set_color( mqtt.RGBtoHSBK( self.zone_avg_right ), transition_time_ms, True ) 
+            mqtt.update_zones.group_bot.set_color( mqtt.RGBtoHSBK( self.zone_avg_bot ) , transition_time_ms, True ) 
+            mqtt.update_zones.group_left.set_color( mqtt.RGBtoHSBK( self.zone_avg_left ) , transition_time_ms, True ) 
+            #log( "lifx avgs : " + str( time.time() - time2 ) )
         
         # Could do some audio reactive stuff here :
         #if self.current_freq_detects["low"]:
@@ -1564,7 +1611,7 @@ class ScreenViewer:
         self.l, self.t, self.r, self.b, self.w, self.h = 0, 0, 0, 0, 0, 0
         #Border on left and top to remove
         self.bl, self.bt, self.br, self.bb = 12, 31, 12, 20
-        
+        self.current_status = 'on'
         
         
     #Gets handle of window to view
@@ -1663,7 +1710,13 @@ class ScreenViewer:
                    dest_w - min( dest_w - bbox[2], dest_w / 8 ), 
                    dest_h - min( dest_h - bbox[3], dest_h / 8 ) )
           im = im.crop( bbox )
-          
+        
+        #time1 = time.time()
+        r,g,b = ImageStat.Stat(im).mean
+        if ( r < 3 and g < 2 and b < 3 ):
+          im = Image.new(mode='RGB',size=(1, 1),color=(0,0,0))
+        #log( "imagestat : " + str(time.time() - time1) )
+        
         #log( "bbox : " + str(time.time() - time1), 9 )
         
 		#this might be faster - should do some tests, but so far speed seems fine
@@ -1700,6 +1753,9 @@ class ScreenViewer:
     def ScreenUpdateT(self):
         #Keep updating screen until terminating
         while self.cl:
+            if self.current_status is not 'on':
+              time.sleep( 5 )
+              pass
             t1 = time.time()
             self.i1 = self.GetScreenImg()
             log('Elapsed: ' + str(time.time() - t1), 9 )
@@ -1939,7 +1995,7 @@ def microphone_update(audio_samples):
     if not mqtt.audio_enabled():
       if last_audio_enable_msg == 0:
         last_audio_enable_msg = 1
-        log( "Visualization Disabled - " + config.settings["configuration"]["MQTT_CMND_PREFIX"] + "[BoardName]" + config.settings["configuration"]["MQTT_ENABLE_TOPIC"], 7 )
+        log( "Visualization Disabled - " + config.settings["MQTT"]["MQTT_CMND_PREFIX"] + "[BoardName]" + config.settings["MQTT"]["MQTT_ENABLE_TOPIC"], 7 )
       return
     # Get processed audio data for each device
 
