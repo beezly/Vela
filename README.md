@@ -71,7 +71,7 @@ Create a custom component for Home Assistant rather than a collection of inputs 
 
 Investigate higher performance screen grabbing techniques.
 
-Add room lighting support - MQTT based zones for non-strip lights to integrate into the general lighting effects.
+Expand Zone Support to audio visualization modes.
 
 ## Installation
 
