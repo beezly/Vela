@@ -7,11 +7,13 @@ A general ESP8266/Sonoff controller for WS2812/SK6812 LED Strips that has a rang
 
 It has a local GUI as well as an MQTT interface for the visualizer, and a set of controls for Home Assistant as well. 
 
-Multiple LED Strip clients can be driven by the single visualizer.  The visualizer renders for a defined set of virtual pixels which are remapped into the actual number of LED pixels per-strip.
+Multiple LED Strip clients can be driven by the single visualizer.  The visualizer renders for a defined set of virtual pixels which are remapped into the actual number of LED pixels per-strip.  
 
 The Sonoff-Tasmota based firmware for ESP8266 devices allows for a robust general lighting interface that can control audio/video visualizations via an external Python application and Home Assistant integration.
 
 It also supports detecting the display state (monitor or TV) of the machine it is running on to toggle the lights (or drive other automations).
+
+In addition it has zone output for the screen visualization so other point light sources can show the general colors via MQTT or directly to LiFX bulbs.
 
 I just made this for my own entertainment, with a lot of experimentation and learning along the way.  If it's useful to you, great!
 
@@ -181,6 +183,92 @@ to start accepting input from the visualizer.
 
 The Home Assitant controls can be used to activate or deactive each strip and change settings.
 
+
+## Zone Support
+
+In addition to the LED Strips you directly control, additional point sources can be coordinated with these effects.  Currently, this is only available for the Visualight bias-light visualization.
+
+There are six zones currently available - Global, Center, Top, Right, Bottom, and Left.  They use a running average of the colors from that area to determine a color for that zone.  Currently MQTT zones update 4 times a second when changing in an effort to avoid a lot of load on MQTT, but this will become a setting.  LiFX is transmitted over UDP and updated at the visualizer speed.
+
+In the Visualizer/python/lib/config.py file, under the MQTT and LiFX sections, you can define where and if you'd like to output these zones.
+
+For MQTT, there are generic zone topics which can be used by Home Assistant or other programs to map the color output into whatever devices you want.  The output is defined as a hex RGB color.  
+
+```
+                     "MQTT_ZONE_BASE_TOPIC":            "/zones/",                            # Base topic for zones
+                     "MQTT_ZONE_GLOBAL_TOPIC":          "zone_global",                        # General Avg Color 
+                     "MQTT_ZONE_CENTER_TOPIC":          "zone_center",                        # Center of the Screen Avg Color 
+                     "MQTT_ZONE_TOP_TOPIC":             "zone_top",                           # Top Avg Color
+                     "MQTT_ZONE_RIGHT_TOPIC":           "zone_right",                         # Right Avg Color
+                     "MQTT_ZONE_BOT_TOPIC":             "zone_bot",                           # Bot Avg Color
+                     "MQTT_ZONE_LEFT_TOPIC":            "zone_left",                          # Left Avg Color  
+```
+
+The topic/payload output to MQTT for a pure red in the center of the screen will look like :
+
+```
+stat/[visualizer]/[device]/zones/zone_center
+#FF0000
+```
+
+There are also a set of custom MQTT topics that can be used to talk to specific devices with a fully custom path.
+
+```
+                     "MQTT_ZONE_GLOBAL_CUSTOM_TOPIC":   None,                                 # This topic is a complete MQTT topic for a custom recipient Example : "cmnd/sonoff_led/color"
+                     "MQTT_ZONE_CENTER_CUSTOM_TOPIC":   None,                                 # This topic is a complete MQTT topic for a custom recipient Output in Hex : #FF0000
+                     "MQTT_ZONE_TOP_CUSTOM_TOPIC":      None,                                 # This topic is a complete MQTT topic for a custom recipient
+                     "MQTT_ZONE_RIGHT_CUSTOM_TOPIC":    None,                                 # This topic is a complete MQTT topic for a custom recipient
+                     "MQTT_ZONE_BOT_CUSTOM_TOPIC":      None,                                 # This topic is a complete MQTT topic for a custom recipient
+                     "MQTT_ZONE_LEFT_CUSTOM_TOPIC":     None,                                 # This topic is a complete MQTT topic for a custom recipient
+```
+
+So for example, to control another sonoff device that's just a single bulb, not an LED strip (or the entirety of an LED strip), this custom strip topic might look like :
+
+```
+                     "MQTT_ZONE_CENTER_CUSTOM_TOPIC":   "cmnd/sonoff_led/color",
+```
+
+Like normal zones, when active, this will send the payload of the color in hex, such a #FF0000 for red.
+
+LiFX bulbs are also directly supported as Zones.
+
+In Visualizer/python/lib/config.py lifx section, you'll find the following options :
+
+```
+                     "LIFX_DISCOVER_LIGHTS":  False,          # Discover and list available lights - takes some time, directly adding lights by mac/ip is faster
+                     "LIFX_NUMLIGHTS":        None,           # If the number of lights is known/specified it'll speed up discovery or None
+                     "LIFX_GLOBAL_GROUP":     None,           # Group name for the global light Ex: "Living Room" will trigger discovery
+                     "LIFX_CENTER_GROUP":     None,           # Group name for the center light
+                     "LIFX_TOP_GROUP":        None,           # Group name for the top light
+                     "LIFX_RIGHT_GROUP":      None,           # Group name for the right light
+                     "LIFX_BOT_GROUP":        None,           # Group name for the bot light
+                     "LIFX_LEFT_GROUP":       None,           # Group name for the left light
+                     "LIFX_GLOBAL_LIGHTS":    None,           # List of Lights for the global light Ex: ["left light", "right light"] by name will trigger discovery
+                     "LIFX_CENTER_LIGHTS":    None,           # List of Lights for the center light or [["12:34:56:78:9a:bc", "192.168.0.2"]] for direct access
+                     "LIFX_TOP_LIGHTS":       None,           # List of Lights for the top light
+                     "LIFX_RIGHT_LIGHTS":     None,           # List of Lights for the right light
+                     "LIFX_BOT_LIGHTS":       None,           # List of Lights for the bot light
+                     "LIFX_LEFT_LIGHTS":      None,           # List of Lights for the left light
+```
+
+Discover lights will check your network for LiFX lights and print out a list of them to the log.  This list will also include a block of mac address and ip you can copy and paste to access each light directly.  Discovery takes some time, so it will slow your startup of the visualizer.  However, accessing the lights directly is faster.  If you don't expect your lights IP to change, you can take the address of each light and specify it instead of the name for a faster start.  Even if you have "discovery" turned off, if you address you lights or groups by name, it will force them to be found via discovery, where as using the mac/ip combo directly will be faster.
+
+Specifying the NUMLIGHTS will speed up discovery if you're using it.
+
+The Group set of zones allows a LiFX group to be specified for all lights in that zone to use a color.
+The Lights categories allow individual or lists of lights to be added.  These can be the light's name or its mac/ip combo.  You can mix and match these together.
+
+A correctly set up LiFX Group and Lights might look like :
+
+```
+"LIFX_GLOBAL_GROUP":  "Living Room",
+"LIFX_TOP_LIGHTS":    [["12:34:56:78:9d:ef", "192.168.0.3"]],
+"LIFX_RIGHT_LIGHTS":  ["Floor Lamp", ["12:34:56:78:9a:bc", "192.168.0.2"], "Couch Lamp"], 
+"LIFX_LEFT_LIGHTS":   ["Overhead Light"],
+```
+
+
+## Additional Info
 
 Below is the default readme for Sonoff-Tasmota.
 
