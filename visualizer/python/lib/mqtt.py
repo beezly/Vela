@@ -9,6 +9,7 @@ from lib.config import log
 if config.settings["configuration"]["USE_LIFX"]:
   from lifxlan import LifxLAN, Light, Group, RGBtoHSBK
   
+enabled = True
 
 boards = {}
 
