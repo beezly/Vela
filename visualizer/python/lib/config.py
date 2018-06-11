@@ -212,10 +212,10 @@ settings = {                                                      # All settings
                                                    "gamma_b":2.1,                   # Gamma Blue Adjustment
                                                    "contrast":4.8,                  # How much contrast we use
                                                    "sensitivity": 0.35,             # Brightness of the effect
-                                                   "decay": 0.8,                    # How much interpolation to do between frames
+                                                   "decay": 0.25,                   # How much interpolation to do between frames
                                                    "roll": 34,                      # Offet for strip if it's not top left corner as the start - this will also be offset by the N_PIXEL_OFFSET, so alternatively you can set it globally there
-                                                   "capturefps": 24,                # Maximum capture speed.  Will override the global one
-                                                   "quality":"Lanczos",             # The quality and therby speed of scaling, selected from the quality list below
+                                                   "capturefps": 8,                 # Maximum capture speed.  Will override the global one
+                                                   "quality":"Hamming",             # The quality and therby speed of scaling, selected from the quality list below
                                                    "output_zones":False,            # Send general colored zones to MQTT/LiFX - for controlling discrete lights outside of the strip
                                                    },
                                      "Gradient":  {"color_mode":"Spectral",         # Colour gradient to display
