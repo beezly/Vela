@@ -110,14 +110,21 @@ class Display_Status():
             log(('registering', name))
             log(('result:', hex(result)))
             log(('lastError:', win32api.GetLastError()))
-
+        
+        self.active = True
         thrd = Thread(target = self.WinPumpMsg)
         thrd.start()
-    
+
+    def Stop( self ):
+      self.active = False
+      
     def WinPumpMsg( self ):
-      while True:
-        win32gui.PumpWaitingMessages()
-        time.sleep( 4 )
+      while self.active:
+        try:
+          win32gui.PumpWaitingMessages()
+          time.sleep( 2 )
+        except (KeyboardInterrupt, SystemExit):
+          sys.exit()
         
 def wndproc(hwnd, msg, wparam, lparam):
     if not config.settings["configuration"]["USE_MQTT"]:
@@ -914,19 +921,6 @@ class Visualizer():
             mqtt.update_zones.group_left.set_color( mqtt.RGBtoHSBK( self.zone_avg_left ) , transition_time_ms, True ) 
             #log( "lifx avgs : " + str( time.time() - time2 ) )
         
-        # Could do some audio reactive stuff here :
-        #if self.current_freq_detects["low"]:
-        #    output = np.copy(self.prev_output)
-        #    output = np.multiply(self.prev_output, config.settings["devices"][self.board]["effect_opts"]["Pulse"]["sensitivity"] * 5 )
-        #y = y*5.0
-        #y = np.copy(interpolate(y, config.settings["devices"][self.board]["configuration"]["N_PIXELS"] ))
-        #output = np.add( output, y )
-        
-        #spectrum = self.visualize_spectrum( y )
-        #output2 = np.add( output, spectrum * 0.3 )
-        #output = np.multiply( output, output2 )
-        #log( list(output) )
-        #log( "Visualight : " + str( time.time() - time1 ), 9 )
         return output
         
     def visualize_single(self):
@@ -1129,6 +1123,8 @@ class GUI(QMainWindow):
             # save and close
             settings.sync()
             event.accept()
+            sv.Stop()
+            ds.Stop()
             sys.exit(0)
             
         else:
