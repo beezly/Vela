@@ -120,7 +120,7 @@ Open an Anaconda prompt and enter the following to install everything you'll nee
 conda create -n visualizer
 activate visualizer
 conda install numpy scipy pyqtgraph
-pip install paho-mqtt pyaudio pillow win32gui pywin32 comtypes lifxlan
+pip install paho-mqtt pyaudio pillow win32gui pywin32 comtypes cffi lifxlan
 ```
 
 The MQTT hierarchy used for the various elements is as follows:
