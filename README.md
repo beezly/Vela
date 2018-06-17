@@ -36,7 +36,7 @@ I'm a big fan of the Tasmota firmware for Sonoff and ESP8266 devices, so it seem
 Most of the other options out there for doing LED FX were great for that, but limited in many other ways.  I decided to take a stab at integrating the two together.
 
 I initially looked at just expanding what was there by directly adding more FX to Tasmota, but I fell down the rabbithole of wanting to do some audio visualization as well.  I stumbled across a nice existing base for this with the [Reactive Audio Strip](https://github.com/scottlawsonbc/audio-reactive-led-strip)/[Systematic-LEDs](https://github.com/not-matt/Systematic-LEDs) work.
-I also figured some bias lighting/Ambilight style backlighting effects would be nice to have.  None of the existing solutions here I could find are Windows based and pretty much all of them want you to be running off a raspberry pi (which I'm not).  I decided to try out just doing my own version in the existing python audio visualizer core.  I haven't used python at all prior to this, so my approach is probably naive and certainly less optimal than it could otherwise be, but it works for my purposes.
+I also figured some bias lighting/Ambilight style backlighting effects would be nice to have.  None of the existing solutions here I could find are Windows based and pretty much all of them want you to be running off a raspberry pi (which I'm not) and usually have HDMI capture hardware and so forth.  I decided to try out just doing my own version in the existing python audio visualizer core.  I haven't used python at all prior to this, so there's probably room for continuing optimizations here.  The screengrabbing technique is now relatively fast and cheap using Windows Desktop Duplication API via a custom .dll.  The GUI (which can be disabled while still controlling things entirely via MQTT or Home Assistant) is now the primary contributor to CPU performance cost.
 
 Could I have just used a raspberry pi here for the strips doing backlighting and ditched the ESP8266?  Sure, but it's fun to have them all be able to sync up for audio and all have the same general functionality including automation.  If a pure backlighting solution more fits your bill, there are options out there.
 
@@ -50,8 +50,9 @@ This stuff is 90% the work of the original authors, I just crammed them all toge
 
 [Systematic LEDs Fork](https://github.com/not-matt/Systematic-LEDs) by Matthew Bowley
 
-[Screen Capture](https://nicholastsmith.wordpress.com/2017/08/10/poe-ai-part-4-real-time-screen-capture-and-plumbing) by Nicholas T. Smith
+[Screen Capture](https://nicholastsmith.wordpress.com/2017/08/10/poe-ai-part-4-real-time-screen-capture-and-plumbing) by Nicholas T. Smith  - A starting point here, which ultimately was refactored and replaced with Windows Desktop Duplication API
 
+[Screen Capture](https://steveindusteves.com/2017/08/04/playing-games-with-python/ ) by Steve  - Desktop Duplication and .dll binding reference
 
 ## Caveats
 This is currently Windows only.  That's what I'm using it on, so that's where all the work has gone.  Mostly it'd work wherever, but the display detection and screengrabbing are Windows specific.  It could go multiplatform with a little bit of work in those areas.
@@ -68,8 +69,6 @@ As such, each strip registers itself with the visualizer and gets its own unicas
 ## Future steps
 More reactive and non-reactive FX.  
 Create a custom component for Home Assistant rather than a collection of inputs and automations.
-
-Investigate higher performance screen grabbing techniques.
 
 Expand Zone Support to audio visualization modes.
 
