@@ -28,6 +28,22 @@ from PIL import ImageStat
 #  gi.require_version('Gtk', '3.0')
 #  from gi.repository import Gtk.gdk
   
+# Desktop duplication DXGI API path in windows via a C++ .dll
+# Referenced https://steveindusteves.com/2017/08/04/playing-games-with-python/ and Desktop Duplication Windows samples
+# This .dll just does one thing - grab the monitor image, mip it down to 1/8th the size, and provide those bits to use in python
+# It's very fast versus other methods and pre-scaled to a workable size prior to doing a bunch of slower PIL/Numpy math on it
+# Might be able to go all the way to 1/16th or 1/32nd size, especially on a 4K monitor  - Can add an option...
+from cffi import FFI
+ffi = FFI()
+lib = ffi.dlopen('lib/WinDeskDup.dll')
+ffi.cdef('''
+    int init();
+    int get_capture_height();
+    int get_capture_width();
+    int get_capture_num_components();
+    int capture_frame(uint8_t* copy_to_buffer);
+''')
+  
 import win32gui
 import win32ui, win32con
 from threading import Thread, Lock
@@ -849,6 +865,10 @@ class Visualizer():
         
         im = sv.GetScreen()
         
+        # moving this earlier is faster with little to no loss in visible quality.
+        quality = config.settings["qualities"][config.settings["devices"][self.board]["effect_opts"]["Visualight"]["quality"]]
+        im = im.resize( (self.pixel_w,self.pixel_h), quality )
+        
         #time2 = time.time()
 
         im = sv.adjust_channel_gamma( im, (config.settings["devices"][self.board]["effect_opts"]["Visualight"]["gamma_r"]),
@@ -866,12 +886,6 @@ class Visualizer():
         im = ImageEnhance.Brightness(im).enhance( config.settings["devices"][self.board]["effect_opts"]["Visualight"]["sensitivity"] )
         
         #log( "Enhance : " + str( time.time() - time2 ), 10 )
-        #time2 = time.time()
-      
-        quality = config.settings["qualities"][config.settings["devices"][self.board]["effect_opts"]["Visualight"]["quality"]]
-        im = im.resize( (self.pixel_w,self.pixel_h), quality )
-        
-        #log( "Resize : " + str( time.time() - time2 ), 10 )
         #time2 = time.time()
         
         imTop = im.crop( (0, 0, self.pixel_w, 1) )
@@ -1023,569 +1037,567 @@ class Visualizer():
         if config.settings["devices"][self.board]["effect_opts"]["Larson Scanner"]["mirror"]:
           output = np.concatenate((output[:, ::-2], output[:, ::2]), axis=1)
         return output
-		
-class GUI(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.initMainWindow()
-        self.updateUIVisibleItems()
 
-    def initMainWindow(self):
-        # Set up window and wrapping layout
-        self.setWindowTitle("Visualization")
-        # Initial window size/pos last saved if available
-        settings.beginGroup("MainWindow")
-        if not settings.value("geometry") == None:
-            self.restoreGeometry(settings.value("geometry"))
-        if not settings.value("state") == None:
-            self.restoreState(settings.value("state"))
-        settings.endGroup()
-        self.main_wrapper = QVBoxLayout()
+if config.settings["configuration"]["USE_GUI"]:
+  class GUI(QMainWindow):
+      def __init__(self):
+          super().__init__()
+          self.initMainWindow()
+          self.updateUIVisibleItems()
 
-        # Set up toolbar
-        #toolbar_guiDialogue.setShortcut('Ctrl+H')
-        toolbar_deviceDialogue = QAction('LED Strip Manager', self)
-        toolbar_deviceDialogue.triggered.connect(self.deviceDialogue)
-        toolbar_guiDialogue = QAction('GUI Properties', self)
-        toolbar_guiDialogue.triggered.connect(self.guiDialogue)
-        toolbar_saveDialogue = QAction('Save Settings', self)
-        toolbar_saveDialogue.triggered.connect(self.saveDialogue)
-        
-        self.toolbar = self.addToolBar('top_toolbar')
-        self.toolbar.setObjectName('top_toolbar')
-        self.toolbar.addAction(toolbar_guiDialogue)
-        self.toolbar.addAction(toolbar_saveDialogue)
-        self.toolbar.addAction(toolbar_deviceDialogue)
+      def initMainWindow(self):
+          # Set up window and wrapping layout
+          self.setWindowTitle("Visualization")
+          # Initial window size/pos last saved if available
+          settings.beginGroup("MainWindow")
+          if not settings.value("geometry") == None:
+              self.restoreGeometry(settings.value("geometry"))
+          if not settings.value("state") == None:
+              self.restoreState(settings.value("state"))
+          settings.endGroup()
+          self.main_wrapper = QVBoxLayout()
 
-        # Set up FPS and error labels
-        self.statusbar = QStatusBar()
-        self.setStatusBar(self.statusbar)
-        self.label_error = QLabel("")
-        self.label_fps = QLabel("")
-        self.label_latency = QLabel("")
-        self.label_fps.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.label_latency.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.statusbar.addPermanentWidget(self.label_error, stretch=1)
-        self.statusbar.addPermanentWidget(self.label_latency)
-        self.statusbar.addPermanentWidget(self.label_fps)
+          # Set up toolbar
+          #toolbar_guiDialogue.setShortcut('Ctrl+H')
+          toolbar_deviceDialogue = QAction('LED Strip Manager', self)
+          toolbar_deviceDialogue.triggered.connect(self.deviceDialogue)
+          toolbar_guiDialogue = QAction('GUI Properties', self)
+          toolbar_guiDialogue.triggered.connect(self.guiDialogue)
+          toolbar_saveDialogue = QAction('Save Settings', self)
+          toolbar_saveDialogue.triggered.connect(self.saveDialogue)
+          
+          self.toolbar = self.addToolBar('top_toolbar')
+          self.toolbar.setObjectName('top_toolbar')
+          self.toolbar.addAction(toolbar_guiDialogue)
+          self.toolbar.addAction(toolbar_saveDialogue)
+          self.toolbar.addAction(toolbar_deviceDialogue)
 
-        # Set up board tabs
-        self.label_boards = QLabel("LED Strips")
-        self.boardsTabWidget = QTabWidget()
-        # Dynamically set up boards tabs
-        self.gui_widgets = {}        # contains references to ares of gui for visibility settings
-        self.gui_widgets["Graphs"] = []
-        self.gui_widgets["Reactive Effect Buttons"] = []
-        self.gui_widgets["Non Reactive Effect Buttons"] = []
-        self.gui_widgets["Frequency Range"] = []
-        self.gui_widgets["Effect Options"] = []
-        self.board_tabs = {}         # contains all the tabs for each board
-        self.board_tabs_widgets = {} # contains all the widgets for each tab
-        for board in config.settings["devices"]:
-            # Make the tab
-            self.addBoard(board)
-        self.main_wrapper.addWidget(self.label_boards)
-        self.main_wrapper.addWidget(self.boardsTabWidget)
-        #self.setLayout(self.main_wrapper)
+          # Set up FPS and error labels
+          self.statusbar = QStatusBar()
+          self.setStatusBar(self.statusbar)
+          self.label_error = QLabel("")
+          self.label_fps = QLabel("")
+          self.label_latency = QLabel("")
+          self.label_fps.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+          self.label_latency.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+          self.statusbar.addPermanentWidget(self.label_error, stretch=1)
+          self.statusbar.addPermanentWidget(self.label_latency)
+          self.statusbar.addPermanentWidget(self.label_fps)
 
-        # Set wrapper as main widget
-        self.setCentralWidget(QWidget(self))
-        self.centralWidget().setLayout(self.main_wrapper)
-        self.show()
+          # Set up board tabs
+          self.label_boards = QLabel("LED Strips")
+          self.boardsTabWidget = QTabWidget()
+          # Dynamically set up boards tabs
+          self.gui_widgets = {}        # contains references to ares of gui for visibility settings
+          self.gui_widgets["Graphs"] = []
+          self.gui_widgets["Reactive Effect Buttons"] = []
+          self.gui_widgets["Non Reactive Effect Buttons"] = []
+          self.gui_widgets["Frequency Range"] = []
+          self.gui_widgets["Effect Options"] = []
+          self.board_tabs = {}         # contains all the tabs for each board
+          self.board_tabs_widgets = {} # contains all the widgets for each tab
+          for board in config.settings["devices"]:
+              # Make the tab
+              self.addBoard(board)
+          self.main_wrapper.addWidget(self.label_boards)
+          self.main_wrapper.addWidget(self.boardsTabWidget)
+          #self.setLayout(self.main_wrapper)
 
-    def addBoard(self, board):
-        self.board_tabs_widgets[board] = {}
-        self.board_tabs[board] = QWidget()
+          # Set wrapper as main widget
+          self.setCentralWidget(QWidget(self))
+          self.centralWidget().setLayout(self.main_wrapper)
+          self.show()
 
-        self.initBoardUI(board)
-        self.boardsTabWidget.addTab(self.board_tabs[board],board)
-        self.board_tabs[board].setLayout(self.board_tabs_widgets[board]["wrapper"])
+      def addBoard(self, board):
+          self.board_tabs_widgets[board] = {}
+          self.board_tabs[board] = QWidget()
 
-        self.gui_widgets["Graphs"].append([self.board_tabs_widgets[board]["graph_view"]])
-        self.gui_widgets["Reactive Effect Buttons"].append([self.board_tabs_widgets[board]["label_reactive"], self.board_tabs_widgets[board]["reactive_button_grid_wrap"]])
-        self.gui_widgets["Non Reactive Effect Buttons"].append([self.board_tabs_widgets[board]["label_non_reactive"], self.board_tabs_widgets[board]["non_reactive_button_grid_wrap"]])
-        self.gui_widgets["Frequency Range"].append([self.board_tabs_widgets[board]["label_slider"], self.board_tabs_widgets[board]["freq_slider"]])
-        self.gui_widgets["Effect Options"].append([self.board_tabs_widgets[board]["label_options"], self.board_tabs_widgets[board]["opts_tabs"]])
+          self.initBoardUI(board)
+          self.boardsTabWidget.addTab(self.board_tabs[board],board)
+          self.board_tabs[board].setLayout(self.board_tabs_widgets[board]["wrapper"])
 
-    def closeEvent(self, event):
-        # executed when the window is being closed
-        quit_msg = "Are you sure you want to exit?"
-        reply = QMessageBox.question(self, 'Message', 
-                         quit_msg, QMessageBox.Yes, QMessageBox.No)
-        if reply == QMessageBox.Yes:
-            # Save window state
-            settings.beginGroup("MainWindow")
-            settings.setValue("geometry", self.saveGeometry())
-            settings.setValue('state', self.saveState())
-            settings.endGroup()
-            # save all settings
-            settings.setValue("settings_dict", config.settings)
-            # save and close
-            settings.sync()
-            event.accept()
-            sv.Stop()
-            ds.Stop()
-            sys.exit(0)
-            
-        else:
-            event.ignore()
+          self.gui_widgets["Graphs"].append([self.board_tabs_widgets[board]["graph_view"]])
+          self.gui_widgets["Reactive Effect Buttons"].append([self.board_tabs_widgets[board]["label_reactive"], self.board_tabs_widgets[board]["reactive_button_grid_wrap"]])
+          self.gui_widgets["Non Reactive Effect Buttons"].append([self.board_tabs_widgets[board]["label_non_reactive"], self.board_tabs_widgets[board]["non_reactive_button_grid_wrap"]])
+          self.gui_widgets["Frequency Range"].append([self.board_tabs_widgets[board]["label_slider"], self.board_tabs_widgets[board]["freq_slider"]])
+          self.gui_widgets["Effect Options"].append([self.board_tabs_widgets[board]["label_options"], self.board_tabs_widgets[board]["opts_tabs"]])
 
-    def updateUIVisibleItems(self):
-        #log("-UPDATE-")
-        for section in self.gui_widgets:
-            for widgets in self.gui_widgets[section]:
-                for widget in widgets:
-                    widget.setVisible(config.settings["GUI_opts"][section])
+      def closeEvent(self, event):
+          # executed when the window is being closed
+          quit_msg = "Are you sure you want to exit?"
+          reply = QMessageBox.question(self, 'Message', 
+                           quit_msg, QMessageBox.Yes, QMessageBox.No)
+          if reply == QMessageBox.Yes:
+              # Save window state
+              settings.beginGroup("MainWindow")
+              settings.setValue("geometry", self.saveGeometry())
+              settings.setValue('state', self.saveState())
+              settings.endGroup()
+              # save all settings
+              settings.setValue("settings_dict", config.settings)
+              # save and close
+              settings.sync()
+              event.accept()
+              sv.Stop()
+              ds.Stop()
+              sys.exit(0)
+              
+          else:
+              event.ignore()
 
-    def deviceDialogue(self):
-        def show_hide_addBoard_interface():
-            current_device = device_type_cbox.currentText()
-            for device in config.device_req_config:
-                for req_config_setting in widgets[device]:
-                    if req_config_setting is not "no_config":
-                        for widget in widgets[device][req_config_setting]:
-                            widget.setVisible(device == current_device)
-                    else:
-                        # doesn't make sense i know i know
-                        widgets[device][req_config_setting].setVisible(device == current_device)
+      def updateUIVisibleItems(self):
+          #log("-UPDATE-")
+          for section in self.gui_widgets:
+              for widgets in self.gui_widgets[section]:
+                  for widget in widgets:
+                      widget.setVisible(config.settings["GUI_opts"][section])
 
-        def validate_input():
-            import re
-            current_device = device_type_cbox.currentText()
-            tests = []
-            log("testing")
-            if current_device == "ESP8266":
-                for req_config_setting in config.device_req_config[current_device]:
-                    test = widgets[current_device][req_config_setting][1].text()
-                    if req_config_setting == "MAC_ADDR":
-                        # Validate MAC
-                        tests.append(True if re.match("[0-9a-f]{2}([-:])[0-9a-f]{2}(\\1[0-9a-f]{2}){4}$", test.lower()) else False)
-                    elif req_config_setting == "UDP_IP":
-                        # Validate IP
-                        try:
-                            pieces = test.split('.')
-                            if len(pieces) != 4: return False
-                            tests.append(all(0<=int(self.prev_output)<256 for self.prev_output in pieces))
-                        except:
-                            tests.append(False)
-                    elif req_config_setting == "UDP_PORT":
-                        # Validate port
-                        log(test)
-                        try:
-                            int(test)
-                            if test > 0:
-                                test.append(True)
-                        except:
-                            tests.append(False)
-                
+      def deviceDialogue(self):
+          def show_hide_addBoard_interface():
+              current_device = device_type_cbox.currentText()
+              for device in config.device_req_config:
+                  for req_config_setting in widgets[device]:
+                      if req_config_setting is not "no_config":
+                          for widget in widgets[device][req_config_setting]:
+                              widget.setVisible(device == current_device)
+                      else:
+                          # doesn't make sense i know i know
+                          widgets[device][req_config_setting].setVisible(device == current_device)
 
+          def validate_input():
+              import re
+              current_device = device_type_cbox.currentText()
+              tests = []
+              log("testing")
+              if current_device == "ESP8266":
+                  for req_config_setting in config.device_req_config[current_device]:
+                      test = widgets[current_device][req_config_setting][1].text()
+                      if req_config_setting == "MAC_ADDR":
+                          # Validate MAC
+                          tests.append(True if re.match("[0-9a-f]{2}([-:])[0-9a-f]{2}(\\1[0-9a-f]{2}){4}$", test.lower()) else False)
+                      elif req_config_setting == "UDP_IP":
+                          # Validate IP
+                          try:
+                              pieces = test.split('.')
+                              if len(pieces) != 4: return False
+                              tests.append(all(0<=int(self.prev_output)<256 for self.prev_output in pieces))
+                          except:
+                              tests.append(False)
+                      elif req_config_setting == "UDP_PORT":
+                          # Validate port
+                          log(test)
+                          try:
+                              int(test)
+                              if test > 0:
+                                  test.append(True)
+                          except:
+                              tests.append(False)
+                  
+                  #pass
+                  
+                  
+                  # Validate port
+              elif current_device == "RaspberryPi":
+                  pass
+                  # Validate LED Pin
+                  # Validate LED Freq
+                  # Validate LED DMA
+              elif current_device == "Fadecandy":
+                  pass
+                  # Validate server
+              elif not config.req_config_setting[current_device]:
+                  pass
+              log(tests)
 
+          # def lineEdit(labelText, defaultText):
+          #     wrapper = QWidget()
+          #     hLayout = QHBoxLayout()
+          #     wrapper.setLayout(hLayout)
+          #     label = QLabel(labelText)
+          #     lEdit = QLineEdit()
+          #     lEdit.setPlaceholderText(defaultText)
+          #     hLayout.addWidget(label)
+          #     hLayout.addWidget(lEdit)
+          #     return wrapper
 
+          # Set up window and layout
+          self.device_dialogue = QDialog(None, Qt.WindowSystemMenuHint | Qt.WindowCloseButtonHint)
+          self.device_dialogue.setWindowTitle("LED Strip Manager")
+          self.device_dialogue.setWindowModality(Qt.ApplicationModal)
+          layout = QVBoxLayout()
+          self.device_dialogue.setLayout(layout)
 
-                #pass
-                
-                
-                # Validate port
-            elif current_device == "RaspberryPi":
-                pass
-                # Validate LED Pin
-                # Validate LED Freq
-                # Validate LED DMA
-            elif current_device == "Fadecandy":
-                pass
-                # Validate server
-            elif not config.req_config_setting[current_device]:
-                pass
-            log(tests)
+          # Set up tab layouts
+          tabs = QTabWidget()
+          layout.addWidget(tabs)
+          addDeviceTab = QWidget()
+          remDeviceTab = QWidget()
+          addDeviceTabLayout = QVBoxLayout()
+          remDeviceTabLayout = QVBoxLayout()
+          addDeviceTabButtonLayout = QGridLayout()
+          remDeviceTabButtonLayout = QGridLayout()
+          addDeviceTab.setLayout(addDeviceTabLayout)
+          remDeviceTab.setLayout(remDeviceTabLayout)
+          tabs.addTab(addDeviceTab, "Add Device")
+          tabs.addTab(remDeviceTab, "Remove Device")
 
-        # def lineEdit(labelText, defaultText):
-        #     wrapper = QWidget()
-        #     hLayout = QHBoxLayout()
-        #     wrapper.setLayout(hLayout)
-        #     label = QLabel(labelText)
-        #     lEdit = QLineEdit()
-        #     lEdit.setPlaceholderText(defaultText)
-        #     hLayout.addWidget(label)
-        #     hLayout.addWidget(lEdit)
-        #     return wrapper
+          # Set up "Add Device" tab
+          device_type_cbox = QComboBox()
+          device_type_cbox.addItems(config.device_req_config.keys())
+          device_type_cbox.currentIndexChanged.connect(show_hide_addBoard_interface)
+          addDeviceTabLayout.addWidget(device_type_cbox)
 
-        # Set up window and layout
-        self.device_dialogue = QDialog(None, Qt.WindowSystemMenuHint | Qt.WindowCloseButtonHint)
-        self.device_dialogue.setWindowTitle("LED Strip Manager")
-        self.device_dialogue.setWindowModality(Qt.ApplicationModal)
-        layout = QVBoxLayout()
-        self.device_dialogue.setLayout(layout)
+          # Set up "Add Device" widgets
+          widgets = {}
+          addDeviceTabLayout.addLayout(addDeviceTabButtonLayout)
+          remDeviceTabLayout.addLayout(remDeviceTabButtonLayout)
+          # if the new board has required config
+          for device in config.device_req_config:
+              # Make the widgets
+              widgets[device] = {}
+              if config.device_req_config[device]:
+                  for req_config_setting in config.device_req_config[device]:
+                      label = config.device_req_config[device][req_config_setting][0]
+                      guide = config.device_req_config[device][req_config_setting][1]
+                      wType = config.device_req_config[device][req_config_setting][2]
+                      deflt = config.device_req_config[device][req_config_setting][3]
+                      wLabel = QLabel(label)
+                      #wGuide = QLabel(guide)
+                      if wType == "textbox":
+                          wEdit = QLineEdit()
+                          wEdit.setPlaceholderText(deflt)
+                          wEdit.textChanged.connect(validate_input)
+                      elif wType == "checkbox":
+                          wEdit = QCheckBox()
+                          wEdit.setCheckState(Qt.Checked if deflt else Qt.Unchecked)
+                      widgets[device][req_config_setting] = [wLabel, wEdit]
+                  # Add widgets to layout
+                  i = 0
+                  for req_config in widgets[device]:
+                      addDeviceTabButtonLayout.addWidget(widgets[device][req_config][0], i, 0)
+                      addDeviceTabButtonLayout.addWidget(widgets[device][req_config][1], i, 1)
+                      #addDeviceTabButtonLayout.addWidget(widget_set[2], i+1, 0, 1, 2)
+                      i += 1
+              else:
+                  no_setup = QLabel("Device requires no additional setup here! :)")
+                  widgets[device]["no_config"] = no_setup
+                  addDeviceTabButtonLayout.addWidget(no_setup, 0, 0)
 
-        # Set up tab layouts
-        tabs = QTabWidget()
-        layout.addWidget(tabs)
-        addDeviceTab = QWidget()
-        remDeviceTab = QWidget()
-        addDeviceTabLayout = QVBoxLayout()
-        remDeviceTabLayout = QVBoxLayout()
-        addDeviceTabButtonLayout = QGridLayout()
-        remDeviceTabButtonLayout = QGridLayout()
-        addDeviceTab.setLayout(addDeviceTabLayout)
-        remDeviceTab.setLayout(remDeviceTabLayout)
-        tabs.addTab(addDeviceTab, "Add Device")
-        tabs.addTab(remDeviceTab, "Remove Device")
+          # Show appropriate widgets
+          show_hide_addBoard_interface()
 
-        # Set up "Add Device" tab
-        device_type_cbox = QComboBox()
-        device_type_cbox.addItems(config.device_req_config.keys())
-        device_type_cbox.currentIndexChanged.connect(show_hide_addBoard_interface)
-        addDeviceTabLayout.addWidget(device_type_cbox)
+          # self.gui_vis_checkboxes = {}
+          # for section in self.gui_widgets:
+          #     self.gui_vis_checkboxes[section] = QCheckBox(section)
+          #     self.gui_vis_checkboxes[section].setCheckState(
+          #             Qt.Checked if config.settings["GUI_opts"][section] else Qt.Unchecked)
+          #     self.gui_vis_checkboxes[section].stateChanged.connect(update_visibilty_dict)
+          #     addDeviceTabLayout.addWidget(self.gui_vis_checkboxes[section])
+          self.add_device_button = QPushButton("Add Device")
+          addDeviceTabLayout.addWidget(self.add_device_button)
 
-        # Set up "Add Device" widgets
-        widgets = {}
-        addDeviceTabLayout.addLayout(addDeviceTabButtonLayout)
-        remDeviceTabLayout.addLayout(remDeviceTabButtonLayout)
-        # if the new board has required config
-        for device in config.device_req_config:
-            # Make the widgets
-            widgets[device] = {}
-            if config.device_req_config[device]:
-                for req_config_setting in config.device_req_config[device]:
-                    label = config.device_req_config[device][req_config_setting][0]
-                    guide = config.device_req_config[device][req_config_setting][1]
-                    wType = config.device_req_config[device][req_config_setting][2]
-                    deflt = config.device_req_config[device][req_config_setting][3]
-                    wLabel = QLabel(label)
-                    #wGuide = QLabel(guide)
-                    if wType == "textbox":
-                        wEdit = QLineEdit()
-                        wEdit.setPlaceholderText(deflt)
-                        wEdit.textChanged.connect(validate_input)
-                    elif wType == "checkbox":
-                        wEdit = QCheckBox()
-                        wEdit.setCheckState(Qt.Checked if deflt else Qt.Unchecked)
-                    widgets[device][req_config_setting] = [wLabel, wEdit]
-                # Add widgets to layout
-                i = 0
-                for req_config in widgets[device]:
-                    addDeviceTabButtonLayout.addWidget(widgets[device][req_config][0], i, 0)
-                    addDeviceTabButtonLayout.addWidget(widgets[device][req_config][1], i, 1)
-                    #addDeviceTabButtonLayout.addWidget(widget_set[2], i+1, 0, 1, 2)
-                    i += 1
-            else:
-                no_setup = QLabel("Device requires no additional setup here! :)")
-                widgets[device]["no_config"] = no_setup
-                addDeviceTabButtonLayout.addWidget(no_setup, 0, 0)
+          # Set up "Remove Device" tab
 
-        # Show appropriate widgets
-        show_hide_addBoard_interface()
+          # Set up ok/cancel buttons
+          self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal, self)
+          self.buttons.accepted.connect(self.device_dialogue.accept)
+          self.buttons.rejected.connect(self.device_dialogue.reject)
+          layout.addWidget(self.buttons)
+          
+          self.device_dialogue.show()
 
-        # self.gui_vis_checkboxes = {}
-        # for section in self.gui_widgets:
-        #     self.gui_vis_checkboxes[section] = QCheckBox(section)
-        #     self.gui_vis_checkboxes[section].setCheckState(
-        #             Qt.Checked if config.settings["GUI_opts"][section] else Qt.Unchecked)
-        #     self.gui_vis_checkboxes[section].stateChanged.connect(update_visibilty_dict)
-        #     addDeviceTabLayout.addWidget(self.gui_vis_checkboxes[section])
-        self.add_device_button = QPushButton("Add Device")
-        addDeviceTabLayout.addWidget(self.add_device_button)
+      def saveDialogue(self):
+          # Save window state
+          settings.beginGroup("MainWindow")
+          settings.setValue("geometry", self.saveGeometry())
+          settings.setValue('state', self.saveState())
+          settings.endGroup()
+          # save all settings
+          settings.setValue("settings_dict", config.settings)
+          # save and close
+          settings.sync()
+          # Confirmation message
+          self.conf_dialogue = QMessageBox()
+          self.conf_dialogue.setText("Settings saved.\nSettings are also automatically saved when program closes.")
+          self.conf_dialogue.show()
 
-        # Set up "Remove Device" tab
+      def guiDialogue(self):
+          def update_visibilty_dict():
+              for checkbox in self.gui_vis_checkboxes:
+                  config.settings["GUI_opts"][checkbox] = self.gui_vis_checkboxes[checkbox].isChecked()
+              self.updateUIVisibleItems()
 
-        # Set up ok/cancel buttons
-        self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal, self)
-        self.buttons.accepted.connect(self.device_dialogue.accept)
-        self.buttons.rejected.connect(self.device_dialogue.reject)
-        layout.addWidget(self.buttons)
-        
-        self.device_dialogue.show()
+          self.gui_dialogue = QDialog(None, Qt.WindowSystemMenuHint | Qt.WindowCloseButtonHint)
+          self.gui_dialogue.setWindowTitle("Show/hide Sections")
+          self.gui_dialogue.setWindowModality(Qt.ApplicationModal)
+          layout = QGridLayout()
+          self.gui_dialogue.setLayout(layout)
+          # OK button
+          self.buttons = QDialogButtonBox(QDialogButtonBox.Ok, Qt.Horizontal, self)
+          self.buttons.accepted.connect(self.gui_dialogue.accept)
 
-    def saveDialogue(self):
-        # Save window state
-        settings.beginGroup("MainWindow")
-        settings.setValue("geometry", self.saveGeometry())
-        settings.setValue('state', self.saveState())
-        settings.endGroup()
-        # save all settings
-        settings.setValue("settings_dict", config.settings)
-        # save and close
-        settings.sync()
-        # Confirmation message
-        self.conf_dialogue = QMessageBox()
-        self.conf_dialogue.setText("Settings saved.\nSettings are also automatically saved when program closes.")
-        self.conf_dialogue.show()
+          self.gui_vis_checkboxes = {}
+          for section in self.gui_widgets:
+              self.gui_vis_checkboxes[section] = QCheckBox(section)
+              self.gui_vis_checkboxes[section].setCheckState(
+                      Qt.Checked if config.settings["GUI_opts"][section] else Qt.Unchecked)
+              self.gui_vis_checkboxes[section].stateChanged.connect(update_visibilty_dict)
+              layout.addWidget(self.gui_vis_checkboxes[section])
+          layout.addWidget(self.buttons)
+          self.gui_dialogue.show()
+      
+                     
+      def update_ui_option( self, effect, setting, value ):
+        if effect in visualizers[self.board].dynamic_effects_config:
+          for key, label, ui_element, *opts in visualizers[self.board].dynamic_effects_config[effect]:
+            if key == setting:
+              if ui_element == "slider":
+                self.board_tabs_widgets[board]["grid_layout_widgets"][effect][setting].setValue( value )
+              elif ui_element == "float_slider":
+                self.board_tabs_widgets[board]["grid_layout_widgets"][effect][setting].setValue( value )
+              elif ui_element == "dropdown":
+                self.board_tabs_widgets[board]["grid_layout_widgets"][effect][setting].setCurrentIndex( self.board_tabs_widgets[board]["grid_layout_widgets"][effect][setting].findText(config.settings["devices"][board]["effect_opts"][effect][setting]) ) 
+              elif ui_element == "checkbox":
+                  self.board_tabs_widgets[board]["grid_layout_widgets"][effect][setting].setCheckState(
+                          Qt.Checked if config.settings["devices"][board]["effect_opts"][effect][setting] else Qt.Unchecked)
+              break
+                                
+      def initBoardUI(self, board):
+          self.board = board
+          # Set up wrapping layout
+          self.board_tabs_widgets[board]["wrapper"] = QVBoxLayout()
+          
+          # Set up graph layout
+          self.board_tabs_widgets[board]["graph_view"] = pg.GraphicsView()
+          graph_layout = pg.GraphicsLayout(border=(100,100,100))
+          self.board_tabs_widgets[board]["graph_view"].setCentralItem(graph_layout)
+          # Mel filterbank plot
+          fft_plot = graph_layout.addPlot(title='Filterbank Output', colspan=3)
+          fft_plot.setRange(yRange=[-0.1, 1.2])
+          fft_plot.disableAutoRange(axis=pg.ViewBox.YAxis)
+          x_data = np.array(range(1, config.settings["devices"][self.board]["configuration"]["N_FFT_BINS"] + 1))
+          self.board_tabs_widgets[board]["mel_curve"] = pg.PlotCurveItem()
+          self.board_tabs_widgets[board]["mel_curve"].setData(x=x_data, y=x_data*0)
+          fft_plot.addItem(self.board_tabs_widgets[board]["mel_curve"])
+          # Visualization plot
+          graph_layout.nextRow()
+          led_plot = graph_layout.addPlot(title='Visualization Output', colspan=3)
+          led_plot.setRange(yRange=[-5, 260])
+          led_plot.disableAutoRange(axis=pg.ViewBox.YAxis)
+          # Pen for each of the color channel curves
+          r_pen = pg.mkPen((255, 30, 30, 200), width=4)
+          g_pen = pg.mkPen((30, 255, 30, 200), width=4)
+          b_pen = pg.mkPen((30, 30, 255, 200), width=4)
+          # Color channel curves
+          self.board_tabs_widgets[board]["r_curve"] = pg.PlotCurveItem(pen=r_pen)
+          self.board_tabs_widgets[board]["g_curve"] = pg.PlotCurveItem(pen=g_pen)
+          self.board_tabs_widgets[board]["b_curve"] = pg.PlotCurveItem(pen=b_pen)
+          # Define x data
+          x_data = np.array(range(1, config.settings["devices"][self.board]["configuration"]["N_PIXELS"] + 1))
+          self.board_tabs_widgets[board]["r_curve"].setData(x=x_data, y=x_data*0)
+          self.board_tabs_widgets[board]["g_curve"].setData(x=x_data, y=x_data*0)
+          self.board_tabs_widgets[board]["b_curve"].setData(x=x_data, y=x_data*0)
+          # Add curves to plot
+          led_plot.addItem(self.board_tabs_widgets[board]["r_curve"])
+          led_plot.addItem(self.board_tabs_widgets[board]["g_curve"])
+          led_plot.addItem(self.board_tabs_widgets[board]["b_curve"])
 
-    def guiDialogue(self):
-        def update_visibilty_dict():
-            for checkbox in self.gui_vis_checkboxes:
-                config.settings["GUI_opts"][checkbox] = self.gui_vis_checkboxes[checkbox].isChecked()
-            self.updateUIVisibleItems()
+          # Set up button layout
+          self.board_tabs_widgets[board]["label_reactive"] = QLabel("Audio Reactive Effects")
+          self.board_tabs_widgets[board]["label_non_reactive"] = QLabel("Non Reactive Effects")
+          self.board_tabs_widgets[board]["reactive_button_grid_wrap"] = QWidget()
+          self.board_tabs_widgets[board]["non_reactive_button_grid_wrap"] = QWidget()
+          self.board_tabs_widgets[board]["reactive_button_grid"] = QGridLayout()
+          self.board_tabs_widgets[board]["non_reactive_button_grid"] = QGridLayout()
+          self.board_tabs_widgets[board]["reactive_button_grid_wrap"].setLayout(self.board_tabs_widgets[board]["reactive_button_grid"])   
+          self.board_tabs_widgets[board]["non_reactive_button_grid_wrap"].setLayout(self.board_tabs_widgets[board]["non_reactive_button_grid"])   
+          buttons = {}
+          connecting_funcs = {}
+          grid_width = 4
+          i = 0
+          j = 0
+          k = 0
+          l = 0
+          # Dynamically layout reactive_buttons and connect them to the visualisation effects
+          def connect_generator(effect):
+              def func():
+                  config.settings["devices"][board]["configuration"]["current_effect"] = effect
+                  log( 'Setting Effect Mode From Connect Generator : ' + str( effect ))
+                  buttons[effect].setDown(True)
+              func.__name__ = effect
+              return func
+          # Where the magic happens
+          for effect in visualizers[board].effects:
+              if not effect in visualizers[board].non_reactive_effects:
+                  connecting_funcs[effect] = connect_generator(effect)
+                  buttons[effect] = QPushButton(effect)
+                  buttons[effect].clicked.connect(connecting_funcs[effect])
+                  self.board_tabs_widgets[board]["reactive_button_grid"].addWidget(buttons[effect], j, i)
+                  i += 1
+                  if i % grid_width == 0:
+                      i = 0
+                      j += 1
+              else:
+                  connecting_funcs[effect] = connect_generator(effect)
+                  buttons[effect] = QPushButton(effect)
+                  buttons[effect].clicked.connect(connecting_funcs[effect])
+                  self.board_tabs_widgets[board]["non_reactive_button_grid"].addWidget(buttons[effect], l, k)
+                  k += 1
+                  if k % grid_width == 0:
+                      k = 0
+                      l += 1
+                  
+          # Set up frequency slider
+          # Frequency range label
+          self.board_tabs_widgets[board]["label_slider"] = QLabel("Frequency Range")
+          # Frequency slider
+          def freq_slider_change(tick):
+              minf = self.board_tabs_widgets[board]["freq_slider"].tickValue(0)**2.0 * (config.settings["configuration"]["MIC_RATE"] / 2.0)
+              maxf = self.board_tabs_widgets[board]["freq_slider"].tickValue(1)**2.0 * (config.settings["configuration"]["MIC_RATE"] / 2.0)
+              t = 'Frequency range: {:.0f} - {:.0f} Hz'.format(minf, maxf)
+              freq_label.setText(t)
+              config.settings["devices"][self.board]["configuration"]["MIN_FREQUENCY"] = minf
+              config.settings["devices"][self.board]["configuration"]["MAX_FREQUENCY"] = maxf
+              signal_processers[self.board].create_mel_bank()
+          def freq_updatemqtt( key ):
+              def func():
+                mqtt.update_effect_setting( mqtt_client, board, key )
+              return func
+          def set_freq_min():
+              config.settings["devices"][board]["configuration"]["MIN_FREQUENCY"] = self.board_tabs_widgets[board]["freq_slider"].start()
+              signal_processers[board].create_mel_bank()
+          def set_freq_max():
+              config.settings["devices"][board]["configuration"]["MAX_FREQUENCY"] = self.board_tabs_widgets[board]["freq_slider"].end()
+              signal_processers[board].create_mel_bank()
+          self.board_tabs_widgets[board]["freq_slider"] = QRangeSlider()
+          self.board_tabs_widgets[board]["freq_slider"].show()
+          self.board_tabs_widgets[board]["freq_slider"].setMin(0)
+          self.board_tabs_widgets[board]["freq_slider"].setMax(20000)
+          self.board_tabs_widgets[board]["freq_slider"].setRange(config.settings["devices"][board]["configuration"]["MIN_FREQUENCY"], config.settings["devices"][board]["configuration"]["MAX_FREQUENCY"])
+          self.board_tabs_widgets[board]["freq_slider"].setBackgroundStyle('background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #222, stop:1 #333);')
+          self.board_tabs_widgets[board]["freq_slider"].setSpanStyle('background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #282, stop:1 #393);')
+          self.board_tabs_widgets[board]["freq_slider"].setDrawValues(True)
+          self.board_tabs_widgets[board]["freq_slider"].endValueChanged.connect(set_freq_max)
+          self.board_tabs_widgets[board]["freq_slider"].startValueChanged.connect(set_freq_min)
+          self.board_tabs_widgets[board]["freq_slider"].setStyleSheet("""
+          QRangeSlider * {
+              border: 0px;
+              padding: 0px;
+          }
+          QRangeSlider > QSplitter::handle {
+              background: #fff;
+          }
+          QRangeSlider > QSplitter::handle:vertical {
+              height: 3px;
+          }
+          QRangeSlider > QSplitter::handle:pressed {
+              background: #ca5;
+          }
+          """)
 
-        self.gui_dialogue = QDialog(None, Qt.WindowSystemMenuHint | Qt.WindowCloseButtonHint)
-        self.gui_dialogue.setWindowTitle("Show/hide Sections")
-        self.gui_dialogue.setWindowModality(Qt.ApplicationModal)
-        layout = QGridLayout()
-        self.gui_dialogue.setLayout(layout)
-        # OK button
-        self.buttons = QDialogButtonBox(QDialogButtonBox.Ok, Qt.Horizontal, self)
-        self.buttons.accepted.connect(self.gui_dialogue.accept)
-
-        self.gui_vis_checkboxes = {}
-        for section in self.gui_widgets:
-            self.gui_vis_checkboxes[section] = QCheckBox(section)
-            self.gui_vis_checkboxes[section].setCheckState(
-                    Qt.Checked if config.settings["GUI_opts"][section] else Qt.Unchecked)
-            self.gui_vis_checkboxes[section].stateChanged.connect(update_visibilty_dict)
-            layout.addWidget(self.gui_vis_checkboxes[section])
-        layout.addWidget(self.buttons)
-        self.gui_dialogue.show()
-    
-                   
-    def update_ui_option( self, effect, setting, value ):
-      if effect in visualizers[self.board].dynamic_effects_config:
-        for key, label, ui_element, *opts in visualizers[self.board].dynamic_effects_config[effect]:
-          if key == setting:
-            if ui_element == "slider":
-              self.board_tabs_widgets[board]["grid_layout_widgets"][effect][setting].setValue( value )
-            elif ui_element == "float_slider":
-              self.board_tabs_widgets[board]["grid_layout_widgets"][effect][setting].setValue( value )
-            elif ui_element == "dropdown":
-              self.board_tabs_widgets[board]["grid_layout_widgets"][effect][setting].setCurrentIndex( self.board_tabs_widgets[board]["grid_layout_widgets"][effect][setting].findText(config.settings["devices"][board]["effect_opts"][effect][setting]) ) 
-            elif ui_element == "checkbox":
-                self.board_tabs_widgets[board]["grid_layout_widgets"][effect][setting].setCheckState(
-                        Qt.Checked if config.settings["devices"][board]["effect_opts"][effect][setting] else Qt.Unchecked)
-            break
-                              
-    def initBoardUI(self, board):
-        self.board = board
-        # Set up wrapping layout
-        self.board_tabs_widgets[board]["wrapper"] = QVBoxLayout()
-        
-        # Set up graph layout
-        self.board_tabs_widgets[board]["graph_view"] = pg.GraphicsView()
-        graph_layout = pg.GraphicsLayout(border=(100,100,100))
-        self.board_tabs_widgets[board]["graph_view"].setCentralItem(graph_layout)
-        # Mel filterbank plot
-        fft_plot = graph_layout.addPlot(title='Filterbank Output', colspan=3)
-        fft_plot.setRange(yRange=[-0.1, 1.2])
-        fft_plot.disableAutoRange(axis=pg.ViewBox.YAxis)
-        x_data = np.array(range(1, config.settings["devices"][self.board]["configuration"]["N_FFT_BINS"] + 1))
-        self.board_tabs_widgets[board]["mel_curve"] = pg.PlotCurveItem()
-        self.board_tabs_widgets[board]["mel_curve"].setData(x=x_data, y=x_data*0)
-        fft_plot.addItem(self.board_tabs_widgets[board]["mel_curve"])
-        # Visualization plot
-        graph_layout.nextRow()
-        led_plot = graph_layout.addPlot(title='Visualization Output', colspan=3)
-        led_plot.setRange(yRange=[-5, 260])
-        led_plot.disableAutoRange(axis=pg.ViewBox.YAxis)
-        # Pen for each of the color channel curves
-        r_pen = pg.mkPen((255, 30, 30, 200), width=4)
-        g_pen = pg.mkPen((30, 255, 30, 200), width=4)
-        b_pen = pg.mkPen((30, 30, 255, 200), width=4)
-        # Color channel curves
-        self.board_tabs_widgets[board]["r_curve"] = pg.PlotCurveItem(pen=r_pen)
-        self.board_tabs_widgets[board]["g_curve"] = pg.PlotCurveItem(pen=g_pen)
-        self.board_tabs_widgets[board]["b_curve"] = pg.PlotCurveItem(pen=b_pen)
-        # Define x data
-        x_data = np.array(range(1, config.settings["devices"][self.board]["configuration"]["N_PIXELS"] + 1))
-        self.board_tabs_widgets[board]["r_curve"].setData(x=x_data, y=x_data*0)
-        self.board_tabs_widgets[board]["g_curve"].setData(x=x_data, y=x_data*0)
-        self.board_tabs_widgets[board]["b_curve"].setData(x=x_data, y=x_data*0)
-        # Add curves to plot
-        led_plot.addItem(self.board_tabs_widgets[board]["r_curve"])
-        led_plot.addItem(self.board_tabs_widgets[board]["g_curve"])
-        led_plot.addItem(self.board_tabs_widgets[board]["b_curve"])
-
-        # Set up button layout
-        self.board_tabs_widgets[board]["label_reactive"] = QLabel("Audio Reactive Effects")
-        self.board_tabs_widgets[board]["label_non_reactive"] = QLabel("Non Reactive Effects")
-        self.board_tabs_widgets[board]["reactive_button_grid_wrap"] = QWidget()
-        self.board_tabs_widgets[board]["non_reactive_button_grid_wrap"] = QWidget()
-        self.board_tabs_widgets[board]["reactive_button_grid"] = QGridLayout()
-        self.board_tabs_widgets[board]["non_reactive_button_grid"] = QGridLayout()
-        self.board_tabs_widgets[board]["reactive_button_grid_wrap"].setLayout(self.board_tabs_widgets[board]["reactive_button_grid"])   
-        self.board_tabs_widgets[board]["non_reactive_button_grid_wrap"].setLayout(self.board_tabs_widgets[board]["non_reactive_button_grid"])   
-        buttons = {}
-        connecting_funcs = {}
-        grid_width = 4
-        i = 0
-        j = 0
-        k = 0
-        l = 0
-        # Dynamically layout reactive_buttons and connect them to the visualisation effects
-        def connect_generator(effect):
-            def func():
-                config.settings["devices"][board]["configuration"]["current_effect"] = effect
-                buttons[effect].setDown(True)
-            func.__name__ = effect
-            return func
-        # Where the magic happens
-        for effect in visualizers[board].effects:
-            if not effect in visualizers[board].non_reactive_effects:
-                connecting_funcs[effect] = connect_generator(effect)
-                buttons[effect] = QPushButton(effect)
-                buttons[effect].clicked.connect(connecting_funcs[effect])
-                self.board_tabs_widgets[board]["reactive_button_grid"].addWidget(buttons[effect], j, i)
-                i += 1
-                if i % grid_width == 0:
-                    i = 0
-                    j += 1
-            else:
-                connecting_funcs[effect] = connect_generator(effect)
-                buttons[effect] = QPushButton(effect)
-                buttons[effect].clicked.connect(connecting_funcs[effect])
-                self.board_tabs_widgets[board]["non_reactive_button_grid"].addWidget(buttons[effect], l, k)
-                k += 1
-                if k % grid_width == 0:
-                    k = 0
-                    l += 1
-                
-        # Set up frequency slider
-        # Frequency range label
-        self.board_tabs_widgets[board]["label_slider"] = QLabel("Frequency Range")
-        # Frequency slider
-        def freq_slider_change(tick):
-            minf = self.board_tabs_widgets[board]["freq_slider"].tickValue(0)**2.0 * (config.settings["configuration"]["MIC_RATE"] / 2.0)
-            maxf = self.board_tabs_widgets[board]["freq_slider"].tickValue(1)**2.0 * (config.settings["configuration"]["MIC_RATE"] / 2.0)
-            t = 'Frequency range: {:.0f} - {:.0f} Hz'.format(minf, maxf)
-            freq_label.setText(t)
-            config.settings["devices"][self.board]["configuration"]["MIN_FREQUENCY"] = minf
-            config.settings["devices"][self.board]["configuration"]["MAX_FREQUENCY"] = maxf
-            signal_processers[self.board].create_mel_bank()
-        def freq_updatemqtt( key ):
-            def func():
-              mqtt.update_effect_setting( mqtt_client, board, key )
-            return func
-        def set_freq_min():
-            config.settings["devices"][board]["configuration"]["MIN_FREQUENCY"] = self.board_tabs_widgets[board]["freq_slider"].start()
-            signal_processers[board].create_mel_bank()
-        def set_freq_max():
-            config.settings["devices"][board]["configuration"]["MAX_FREQUENCY"] = self.board_tabs_widgets[board]["freq_slider"].end()
-            signal_processers[board].create_mel_bank()
-        self.board_tabs_widgets[board]["freq_slider"] = QRangeSlider()
-        self.board_tabs_widgets[board]["freq_slider"].show()
-        self.board_tabs_widgets[board]["freq_slider"].setMin(0)
-        self.board_tabs_widgets[board]["freq_slider"].setMax(20000)
-        self.board_tabs_widgets[board]["freq_slider"].setRange(config.settings["devices"][board]["configuration"]["MIN_FREQUENCY"], config.settings["devices"][board]["configuration"]["MAX_FREQUENCY"])
-        self.board_tabs_widgets[board]["freq_slider"].setBackgroundStyle('background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #222, stop:1 #333);')
-        self.board_tabs_widgets[board]["freq_slider"].setSpanStyle('background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #282, stop:1 #393);')
-        self.board_tabs_widgets[board]["freq_slider"].setDrawValues(True)
-        self.board_tabs_widgets[board]["freq_slider"].endValueChanged.connect(set_freq_max)
-        self.board_tabs_widgets[board]["freq_slider"].startValueChanged.connect(set_freq_min)
-        self.board_tabs_widgets[board]["freq_slider"].setStyleSheet("""
-        QRangeSlider * {
-            border: 0px;
-            padding: 0px;
-        }
-        QRangeSlider > QSplitter::handle {
-            background: #fff;
-        }
-        QRangeSlider > QSplitter::handle:vertical {
-            height: 3px;
-        }
-        QRangeSlider > QSplitter::handle:pressed {
-            background: #ca5;
-        }
-        """)
-
-        # Set up option tabs layout
-        self.board_tabs_widgets[board]["label_options"] = QLabel("Effect Options")
-        self.board_tabs_widgets[board]["opts_tabs"] = QTabWidget()
-        # Dynamically set up tabs
-        tabs = {}
-        grid_layouts = {}
-        self.board_tabs_widgets[board]["grid_layout_widgets"] = {}
-        options = config.settings["devices"][board]["effect_opts"].keys()
-        for effect in visualizers[self.board].effects:
-            # Make the tab
-            self.board_tabs_widgets[board]["grid_layout_widgets"][effect] = {}
-            tabs[effect] = QWidget()
-            grid_layouts[effect] = QGridLayout()
-            tabs[effect].setLayout(grid_layouts[effect])
-            self.board_tabs_widgets[board]["opts_tabs"].addTab(tabs[effect],effect)
-            # These functions make functions for the dynamic ui generation
-            # YOU WANT-A DYNAMIC I GIVE-A YOU DYNAMIC!
-            def gen_slider_valuechanger(effect, key):
-                def func():
-                    if ( self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].isSliderDown() ):
-                      config.settings["devices"][board]["effect_opts"][effect][key] = self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].value()
-                      log( "Set " + effect + " " + key + " to : " + str(config.settings["devices"][board]["effect_opts"][effect][key]), 6 )
-                return func
-            def gen_updatemqtt( key ):
-                def func():
-                  mqtt.update_effect_setting( mqtt_client, board, key )
-                return func
-            def gen_float_slider_valuechanger(effect, key):
-                def func():
-                    if ( self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].isSliderDown() ):
-                      config.settings["devices"][board]["effect_opts"][effect][key] = self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].slider_value
-                      log( "Set " + effect + " " + key + " to : " + str(config.settings["devices"][board]["effect_opts"][effect][key]), 6 )
-                return func
-            def gen_combobox_valuechanger(effect, key):
-                def func():
-                    config.settings["devices"][board]["effect_opts"][effect][key] = self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].currentText()
-                    log( "Set " + effect + " " + key + " to : " + self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].currentText(), 6 )
+          # Set up option tabs layout
+          self.board_tabs_widgets[board]["label_options"] = QLabel("Effect Options")
+          self.board_tabs_widgets[board]["opts_tabs"] = QTabWidget()
+          # Dynamically set up tabs
+          tabs = {}
+          grid_layouts = {}
+          self.board_tabs_widgets[board]["grid_layout_widgets"] = {}
+          options = config.settings["devices"][board]["effect_opts"].keys()
+          for effect in visualizers[self.board].effects:
+              # Make the tab
+              self.board_tabs_widgets[board]["grid_layout_widgets"][effect] = {}
+              tabs[effect] = QWidget()
+              grid_layouts[effect] = QGridLayout()
+              tabs[effect].setLayout(grid_layouts[effect])
+              self.board_tabs_widgets[board]["opts_tabs"].addTab(tabs[effect],effect)
+              # These functions make functions for the dynamic ui generation
+              # YOU WANT-A DYNAMIC I GIVE-A YOU DYNAMIC!
+              def gen_slider_valuechanger(effect, key):
+                  def func():
+                      if ( self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].isSliderDown() ):
+                        config.settings["devices"][board]["effect_opts"][effect][key] = self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].value()
+                        log( "Set " + effect + " " + key + " to : " + str(config.settings["devices"][board]["effect_opts"][effect][key]), 6 )
+                  return func
+              def gen_updatemqtt( key ):
+                  def func():
                     mqtt.update_effect_setting( mqtt_client, board, key )
-                return func
-            def gen_checkbox_valuechanger(effect, key):
-                def func():
-                    config.settings["devices"][board]["effect_opts"][effect][key] = self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].isChecked()
-                    log( "Set " + effect + " " + key + " to : " + str(config.settings["devices"][board]["effect_opts"][effect][key]), 6 )
-                    mqtt.update_effect_setting( mqtt_client, board, key )
-                return func
-                                              
-            # Dynamically generate ui for settings
-            if effect in visualizers[self.board].dynamic_effects_config:
-                i = 0
-                connecting_funcs[effect] = {}
-                for key, label, ui_element, *opts in visualizers[self.board].dynamic_effects_config[effect]:
-                    if opts: # neatest way  ^^^^^ i could think of to unpack and handle an unknown number of opts (if any) NOTE only works with py >=3.6
-                        opts = list(opts[0])
-                    if ui_element == "slider":
-                        connecting_funcs[effect][key] = gen_slider_valuechanger(effect, key)
-                        self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key] = QSlider(Qt.Horizontal)
-                        self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].setMinimum(opts[0])
-                        self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].setMaximum(opts[1])
-                        self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].setValue(config.settings["devices"][board]["effect_opts"][effect][key])
-                        self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].valueChanged.connect(
-                                connecting_funcs[effect][key])
-                        self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].sliderReleased.connect( gen_updatemqtt(key) )
-                    elif ui_element == "float_slider":
-                        connecting_funcs[effect][key] = gen_float_slider_valuechanger(effect, key)
-                        self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key] = QFloatSlider(*opts, config.settings["devices"][board]["effect_opts"][effect][key])
-                        self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].setValue(config.settings["devices"][board]["effect_opts"][effect][key])
-                        self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].valueChanged.connect(
-                                connecting_funcs[effect][key])
-                        self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].sliderReleased.connect( gen_updatemqtt(key) )
-                    elif ui_element == "dropdown":
-                        connecting_funcs[effect][key] = gen_combobox_valuechanger(effect, key)
-                        self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key] = QComboBox()
-                        self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].addItems(opts)
-                        self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].setCurrentIndex(opts.index(config.settings["devices"][board]["effect_opts"][effect][key]))
-                        self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].currentIndexChanged.connect(
-                                connecting_funcs[effect][key])
-                    elif ui_element == "checkbox":
-                        connecting_funcs[effect][key] = gen_checkbox_valuechanger(effect, key)
-                        self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key] = QCheckBox()
-                        self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].stateChanged.connect(
-                                connecting_funcs[effect][key])
-                        self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].setCheckState(
-                                Qt.Checked if config.settings["devices"][board]["effect_opts"][effect][key] else Qt.Unchecked)
-                    grid_layouts[effect].addWidget(QLabel(label),i,0)
-                    grid_layouts[effect].addWidget(self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key],i,1)
-                    i += 1    
-            else:
-                grid_layouts[effect].addWidget(QLabel("No customisable options for this effect :("),0,0)
-                
-        
-        
-        # Add layouts into self.board_tabs_widgets[board]["wrapper"]
-        self.board_tabs_widgets[board]["wrapper"].addWidget(self.board_tabs_widgets[board]["graph_view"])
-        self.board_tabs_widgets[board]["wrapper"].addWidget(self.board_tabs_widgets[board]["label_reactive"])
-        self.board_tabs_widgets[board]["wrapper"].addWidget(self.board_tabs_widgets[board]["reactive_button_grid_wrap"])
-        self.board_tabs_widgets[board]["wrapper"].addWidget(self.board_tabs_widgets[board]["label_non_reactive"])
-        self.board_tabs_widgets[board]["wrapper"].addWidget(self.board_tabs_widgets[board]["non_reactive_button_grid_wrap"])
-        self.board_tabs_widgets[board]["wrapper"].addWidget(self.board_tabs_widgets[board]["label_slider"])
-        self.board_tabs_widgets[board]["wrapper"].addWidget(self.board_tabs_widgets[board]["freq_slider"])
-        self.board_tabs_widgets[board]["wrapper"].addWidget(self.board_tabs_widgets[board]["label_options"])
-        self.board_tabs_widgets[board]["wrapper"].addWidget(self.board_tabs_widgets[board]["opts_tabs"])
+                  return func
+              def gen_float_slider_valuechanger(effect, key):
+                  def func():
+                      if ( self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].isSliderDown() ):
+                        config.settings["devices"][board]["effect_opts"][effect][key] = self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].slider_value
+                        log( "Set " + effect + " " + key + " to : " + str(config.settings["devices"][board]["effect_opts"][effect][key]), 6 )
+                  return func
+              def gen_combobox_valuechanger(effect, key):
+                  def func():
+                      config.settings["devices"][board]["effect_opts"][effect][key] = self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].currentText()
+                      log( "Set " + effect + " " + key + " to : " + self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].currentText(), 6 )
+                      mqtt.update_effect_setting( mqtt_client, board, key )
+                  return func
+              def gen_checkbox_valuechanger(effect, key):
+                  def func():
+                      config.settings["devices"][board]["effect_opts"][effect][key] = self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].isChecked()
+                      log( "Set " + effect + " " + key + " to : " + str(config.settings["devices"][board]["effect_opts"][effect][key]), 6 )
+                      mqtt.update_effect_setting( mqtt_client, board, key )
+                  return func
+                                                
+              # Dynamically generate ui for settings
+              if effect in visualizers[self.board].dynamic_effects_config:
+                  i = 0
+                  connecting_funcs[effect] = {}
+                  for key, label, ui_element, *opts in visualizers[self.board].dynamic_effects_config[effect]:
+                      if opts: # neatest way  ^^^^^ i could think of to unpack and handle an unknown number of opts (if any) NOTE only works with py >=3.6
+                          opts = list(opts[0])
+                      if ui_element == "slider":
+                          connecting_funcs[effect][key] = gen_slider_valuechanger(effect, key)
+                          self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key] = QSlider(Qt.Horizontal)
+                          self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].setMinimum(opts[0])
+                          self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].setMaximum(opts[1])
+                          self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].setValue(config.settings["devices"][board]["effect_opts"][effect][key])
+                          self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].valueChanged.connect(
+                                  connecting_funcs[effect][key])
+                          self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].sliderReleased.connect( gen_updatemqtt(key) )
+                      elif ui_element == "float_slider":
+                          connecting_funcs[effect][key] = gen_float_slider_valuechanger(effect, key)
+                          self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key] = QFloatSlider(*opts, config.settings["devices"][board]["effect_opts"][effect][key])
+                          self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].setValue(config.settings["devices"][board]["effect_opts"][effect][key])
+                          self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].valueChanged.connect(
+                                  connecting_funcs[effect][key])
+                          self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].sliderReleased.connect( gen_updatemqtt(key) )
+                      elif ui_element == "dropdown":
+                          connecting_funcs[effect][key] = gen_combobox_valuechanger(effect, key)
+                          self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key] = QComboBox()
+                          self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].addItems(opts)
+                          self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].setCurrentIndex(opts.index(config.settings["devices"][board]["effect_opts"][effect][key]))
+                          self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].currentIndexChanged.connect(
+                                  connecting_funcs[effect][key])
+                      elif ui_element == "checkbox":
+                          connecting_funcs[effect][key] = gen_checkbox_valuechanger(effect, key)
+                          self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key] = QCheckBox()
+                          self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].stateChanged.connect(
+                                  connecting_funcs[effect][key])
+                          self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key].setCheckState(
+                                  Qt.Checked if config.settings["devices"][board]["effect_opts"][effect][key] else Qt.Unchecked)
+                      grid_layouts[effect].addWidget(QLabel(label),i,0)
+                      grid_layouts[effect].addWidget(self.board_tabs_widgets[board]["grid_layout_widgets"][effect][key],i,1)
+                      i += 1    
+              else:
+                  grid_layouts[effect].addWidget(QLabel("No customisable options for this effect :("),0,0)
+                  
+          
+          
+          # Add layouts into self.board_tabs_widgets[board]["wrapper"]
+          self.board_tabs_widgets[board]["wrapper"].addWidget(self.board_tabs_widgets[board]["graph_view"])
+          self.board_tabs_widgets[board]["wrapper"].addWidget(self.board_tabs_widgets[board]["label_reactive"])
+          self.board_tabs_widgets[board]["wrapper"].addWidget(self.board_tabs_widgets[board]["reactive_button_grid_wrap"])
+          self.board_tabs_widgets[board]["wrapper"].addWidget(self.board_tabs_widgets[board]["label_non_reactive"])
+          self.board_tabs_widgets[board]["wrapper"].addWidget(self.board_tabs_widgets[board]["non_reactive_button_grid_wrap"])
+          self.board_tabs_widgets[board]["wrapper"].addWidget(self.board_tabs_widgets[board]["label_slider"])
+          self.board_tabs_widgets[board]["wrapper"].addWidget(self.board_tabs_widgets[board]["freq_slider"])
+          self.board_tabs_widgets[board]["wrapper"].addWidget(self.board_tabs_widgets[board]["label_options"])
+          self.board_tabs_widgets[board]["wrapper"].addWidget(self.board_tabs_widgets[board]["opts_tabs"])
 
-        
+          
         
 ####
 # Uses some screen capture ideas and threading 
@@ -1609,6 +1621,11 @@ class ScreenViewer:
         self.bl, self.bt, self.br, self.bb = 12, 31, 12, 20
         self.current_status = 'on'
         
+        buffer_size = int(lib.init())
+        self.capture_height = lib.get_capture_height()
+        self.capture_width = lib.get_capture_width()
+        self.capture_components = lib.get_capture_num_components()
+        self.raw_buffer = np.empty((buffer_size), np.uint8)
         
     #Gets handle of window to view
     #wname:         Title of window to find
@@ -1648,53 +1665,32 @@ class ScreenViewer:
          
     #Gets the screen of the window referenced by self.hwnd
     def GetScreenImg(self):
-        if self.hwnd is None:
-            raise Exception("HWND is none. HWND not called or invalid window name provided.")
+        cap = 0
 
-        dest_h = int(self.h / config.settings["configuration"]["SCREENGRAB_HEIGHT_SCALE"])
-        dest_w = int(self.w / config.settings["configuration"]["SCREENGRAB_WIDTH_SCALE"])
-        #log( ("dest w/h : " + str(dest_w) + "/" + str(dest_h)), 7 )
-        #if not using windows, mss could be used.  it was about 2-3x slower for me on windows, though.
-        if 0:
-          with mss() as sct:
-          # Get rid of the first, as it represents the "All in One" monitor:
-            for num, monitor in enumerate(sct.monitors[1:], 1):
-              # Get raw pixels from the screen
-              sct_img = sct.grab(monitor)
-              # Create the Image
-              im = Image.frombytes('RGB', sct_img.size, sct_img.bgra, 'raw', 'BGRX')
-              im = im.resize( (dest_w, dest_h) )
-        else:          
-          #time1 = time.time()
-          dataBitMap = win32ui.CreateBitmap()        
-          w_handle_DC = win32gui.GetWindowDC(self.hwnd)
-          windowDC = win32ui.CreateDCFromHandle(w_handle_DC)
-          memDC = windowDC.CreateCompatibleDC()
-          dataBitMap.CreateCompatibleBitmap(windowDC , dest_w, dest_h)
-          memDC.SelectObject(dataBitMap)
-          #log( "setup : " + str(time.time() - time1), 9 )
-          #time1 = time.time()
-          #memDC.BitBlt((0,0), (w, h), windowDC, (t, l), win32con.SRCCOPY)
-          #win32gui.SetStretchBltMode( w_handle_DC, win32con.HALFTONE )
-          
-          try:
-            memDC.StretchBlt((0,0), (dest_w, dest_h), windowDC, (self.t, self.l), (self.w,self.h), win32con.SRCCOPY)
-          except Exception as e:
-            # If we fail for some reason, just clean up and return black
-            log("Exception: %s" % str(e))
-            windowDC.DeleteDC()
-            memDC.DeleteDC()
-            win32gui.ReleaseDC(self.hwnd, w_handle_DC)
-            win32gui.DeleteObject(dataBitMap.GetHandle())
-            im = Image.new('RGB', (dest_w,dest_h), (0, 0, 0))
-            return im
-            
-          #log( "blit : " + str(time.time() - time1), 9 )
-          im = Image.frombuffer( 'RGB',(dest_w, dest_h),dataBitMap.GetBitmapBits(True), 'raw', 'BGRX', 0, 1)
-          windowDC.DeleteDC()
-          memDC.DeleteDC()
-          win32gui.ReleaseDC(self.hwnd, w_handle_DC)
-          win32gui.DeleteObject(dataBitMap.GetHandle())
+        #if not using windows, mss could be used.  it's going to be far slower than the windows desktop duplication path used below
+        #if 0:
+        #  with mss() as sct:
+        #  # Get rid of the first, as it represents the "All in One" monitor:
+        #    for num, monitor in enumerate(sct.monitors[1:], 1):
+        #      # Get raw pixels from the screen
+        #      sct_img = sct.grab(monitor)
+        #      # Create the Image
+        #      im = Image.frombytes('RGB', sct_img.size, sct_img.bgra, 'raw', 'BGRX')
+        #      im = im.resize( (dest_w, dest_h) )
+       
+        while cap is 0:
+          cap = lib.capture_frame(ffi.cast("uint8_t *", self.raw_buffer.ctypes.data))
+          # Don't spin too hard if we don't have updates, can eat CPU
+          # This only really happens when we're running with no UI and already running fast, but
+          # no reason to spin on the CPU unecessarily
+          if cap is 0:
+            time.sleep( 0.005 )
+
+        im = Image.frombytes('RGB', (self.capture_width,self.capture_height), self.raw_buffer, 'raw', 'BGRX')
+        #log( "capture: " + str(time.time() - time1), 3 )
+        dest_h = self.capture_height
+        dest_w = self.capture_width
+
           
         #Black Border Removal - gets rid of letter/pillar boxing
         #Tries to limit the overall cropping to sensical limits
@@ -1708,23 +1704,13 @@ class ScreenViewer:
           im = im.crop( bbox )
         
         #time1 = time.time()
+        # If the screen is all black, it has a low purplish tone, not sure why
+        # just clamp it out entirely...
         r,g,b = ImageStat.Stat(im).mean
         if ( r < 3 and g < 2 and b < 3 ):
           im = Image.new(mode='RGB',size=(1, 1),color=(0,0,0))
         #log( "imagestat : " + str(time.time() - time1) )
-        
-        #log( "bbox : " + str(time.time() - time1), 9 )
-        
-		#this might be faster - should do some tests, but so far speed seems fine
-        #bits = np.fromstring(dataBitMap.GetBitmapBits(True), np.uint8)
-        #
-        #bits.shape = (dest_h,dest_w,4)
-        #self._rgb[0] = bits[:,:,2]
-        #self._rgb[1] = bits[:,:,1]
-        #self._rgb[2] = bits[:,:,0]
 
-        # do we care if it's original size after cropping?  Probably not and probably faster this way anyway.
-        #im = im.resize( (dest_w, dest_h) )
         return im
 
 
@@ -2039,8 +2025,8 @@ def microphone_update(audio_samples):
         app.processEvents()
 
     # Left in just in case prople dont use the gui
-    elif vol < config.settings["configuration"]["MIN_VOLUME_THRESHOLD"]:
-        log("No audio input. Volume below threshold. Volume: {}".format(vol))
+    #elif vol < config.settings["configuration"]["MIN_VOLUME_THRESHOLD"]:
+    #    log("No audio input. Volume below threshold. Volume: {}".format(vol))
     if config.settings["configuration"]["DISPLAY_FPS"]:
         log('FPS {:.0f} / {:.0f}'.format(fps, config.settings["configuration"]["FPS"]))
 
@@ -2105,7 +2091,8 @@ if config.settings["configuration"]["USE_GUI"]:
     app.setApplicationName('Visualization')
     gui = GUI()
     app.processEvents()
-
+    microphone.microphone_register_gui( gui )
+    
 def int_gui(): 
    return gui
     
@@ -2115,7 +2102,7 @@ _time_prev = time.time() * 1000.0
 # The low-pass filter used to estimate frames-per-second
 _fps = dsp.ExpFilter(val=config.settings["configuration"]["FPS"], alpha_decay=0.2, alpha_rise=0.2)
 
-microphone.microphone_register_gui( gui )
 
+    
 # Start listening to live audio stream
 microphone.start_stream(microphone_update)

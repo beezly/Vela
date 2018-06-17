@@ -12,6 +12,8 @@ def log( msg, log_level = 0 ):
     print( msg )
 
 use_defaults = {"configuration": True,                           # See notes below for detailed explanation
+                "MQTT": True,
+                "LiFX": True,
                 "GUI_opts": False,
                 "devices": True,
                 "colors": True,
@@ -41,8 +43,6 @@ settings = {                                                      # All settings
                      "MQTT_PORT": 1883,                                                       # MQTT Port
                      "USE_LIFX": False,                                                       # Should we broadcast visualight zones to lifx?
                      "MULTICAST_UDP_IP": "225.255.255.240",                                   # Multicast UDP IP
-                     "SCREENGRAB_HEIGHT_SCALE": 10,                                           # The output height for visualight
-                     "SCREENGRAB_WIDTH_SCALE": 10,                                            # The output width for visualight
                      "SCREENGRAB_MAX_FPS": 30,                                                # Screengrabbing will be capped at this framerate for performance reasons
                      },
                      
@@ -205,16 +205,16 @@ settings = {                                                      # All settings
                                                    "color_mode":"Spectral"          # Multicolour mode to use
                                                    },
                                      "Visualight":{
-                                                   "blur": 1.25,                    # Gaussian Blur to be applied
-                                                   "saturation":1.9,                # How much color we use
+                                                   "blur": 0.6,                     # Gaussian Blur to be applied
+                                                   "saturation": 1.1,               # How much color we use 
                                                    "gamma_r":2.1,                   # Gamma Red Adjustment
                                                    "gamma_g":2.2,                   # Gamma Green Adjustment
                                                    "gamma_b":2.1,                   # Gamma Blue Adjustment
-                                                   "contrast":4.8,                  # How much contrast we use
-                                                   "sensitivity": 0.35,             # Brightness of the effect
-                                                   "decay": 0.25,                   # How much interpolation to do between frames
+                                                   "contrast":2.1,                  # How much contrast we use
+                                                   "sensitivity": 0.5,              # Brightness of the effect
+                                                   "decay": 0.6,                    # How much interpolation to do between frames
                                                    "roll": 34,                      # Offet for strip if it's not top left corner as the start - this will also be offset by the N_PIXEL_OFFSET, so alternatively you can set it globally there
-                                                   "capturefps": 8,                 # Maximum capture speed.  Will override the global one
+                                                   "capturefps": 30,                # Maximum capture speed.  Will override the global one
                                                    "quality":"Hamming",             # The quality and therby speed of scaling, selected from the quality list below
                                                    "output_zones":False,            # Send general colored zones to MQTT/LiFX - for controlling discrete lights outside of the strip
                                                    },
