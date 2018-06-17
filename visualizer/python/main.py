@@ -30,14 +30,14 @@ from PIL import ImageStat
   
 # Desktop duplication DXGI API path in windows via a C++ .dll
 # Referenced https://steveindusteves.com/2017/08/04/playing-games-with-python/ and Desktop Duplication Windows samples
-# This .dll just does one thing - grab the monitor image, mip it down to 1/8th the size, and provide those bits to use in python
+# This .dll just does one thing - grab the monitor image, mip it down to the specified size, and provide those bits to use in python
 # It's very fast versus other methods and pre-scaled to a workable size prior to doing a bunch of slower PIL/Numpy math on it
-# Might be able to go all the way to 1/16th or 1/32nd size, especially on a 4K monitor  - Can add an option...
+# Going down to 1/32nd or even 1/64 size (5 or 6), especially on a 4K+ monitor, might be worth it performance wize
 from cffi import FFI
 ffi = FFI()
 lib = ffi.dlopen('lib/WinDeskDup.dll')
 ffi.cdef('''
-    int init();
+    int init( int mip_level );
     int get_capture_height();
     int get_capture_width();
     int get_capture_num_components();
@@ -1621,10 +1621,12 @@ class ScreenViewer:
         self.bl, self.bt, self.br, self.bb = 12, 31, 12, 20
         self.current_status = 'on'
         
-        buffer_size = int(lib.init())
+        buffer_size = int(lib.init( config.settings["configuration"]["SCREENGRAB_SCALE_FACTOR"] ))
         self.capture_height = lib.get_capture_height()
         self.capture_width = lib.get_capture_width()
         self.capture_components = lib.get_capture_num_components()
+        log( "Screen Capture Buffer Width : " + str( self.capture_width ), 5 )
+        log( "Screen Capture Buffer Height : " + str( self.capture_height ), 5 )
         self.raw_buffer = np.empty((buffer_size), np.uint8)
         
     #Gets handle of window to view

@@ -44,6 +44,7 @@ settings = {                                                      # All settings
                      "USE_LIFX": False,                                                       # Should we broadcast visualight zones to lifx?
                      "MULTICAST_UDP_IP": "225.255.255.240",                                   # Multicast UDP IP
                      "SCREENGRAB_MAX_FPS": 30,                                                # Screengrabbing will be capped at this framerate for performance reasons
+                     "SCREENGRAB_SCALE_FACTOR": 4,                                            # Should be somewhere between 3-6+, go higher with higher resolutions for faster performance
                      },
                      
     "MQTT":{
