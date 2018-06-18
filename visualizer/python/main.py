@@ -42,6 +42,7 @@ ffi.cdef('''
     int get_capture_width();
     int get_capture_num_components();
     int capture_frame(uint8_t* copy_to_buffer);
+    void release();
 ''')
   
 import win32gui
@@ -157,6 +158,7 @@ def wndproc(hwnd, msg, wparam, lparam):
             for board in config.settings["devices"]:
               mqtt_topic = config.settings["MQTT"]["MQTT_STAT_PREFIX"] + board + config.settings["MQTT"]["MQTT_DISPLAY_TOPIC"]
               mqtt_client.publish( mqtt_topic, config.settings["MQTT"]["MQTT_MONITOR_PAYLOAD_OFF"] )
+              sv.HandleScreenChange( 'off' )
         if wparam == PBT_POWERSETTINGCHANGE:
             log('Power setting changed...', 3)
             settings = cast(lparam, POINTER(POWERBROADCAST_SETTING)).contents
@@ -169,15 +171,15 @@ def wndproc(hwnd, msg, wparam, lparam):
                   if data == 0: 
                       log('Display off', 3)
                       mqtt_client.publish( mqtt_topic, config.settings["MQTT"]["MQTT_MONITOR_PAYLOAD_OFF"] )
-                      sv.current_status = 'off'
+                      sv.HandleScreenChange( 'off' )
                   if data == 1: 
                       log('Display on', 3)
                       mqtt_client.publish( mqtt_topic, config.settings["MQTT"]["MQTT_MONITOR_PAYLOAD_ON"] )
-                      sv.current_status = 'on'
+                      sv.HandleScreenChange( 'on' )
                   if data == 2: 
                       log('Display dimmed', 3)
                       mqtt_client.publish( mqtt_topic, config.settings["MQTT"]["MQTT_MONITOR_PAYLOAD_SUSPEND"] )
-                      sv.current_status = 'sleep'
+                      sv.HandleScreenChange( 'sleep' )
             elif power_setting == GUID_ACDC_POWER_SOURCE:
                 if data == 0: log('AC power', 3)
                 if data == 1: log('Battery power', 3)
@@ -190,11 +192,11 @@ def wndproc(hwnd, msg, wparam, lparam):
                   if data == 0:
                       log('Monitor off', 3)
                       mqtt_client.publish( mqtt_topic, config.settings["MQTT"]["MQTT_MONITOR_PAYLOAD_OFF"] )
-                      sv.current_status = 'off'
+                      sv.HandleScreenChange( 'off' )
                   if data == 1:
                       log('Monitor on', 3)
                       mqtt_client.publish( mqtt_topic, config.settings["MQTT"]["MQTT_MONITOR_PAYLOAD_ON"] )
-                      sv.current_status = 'on'
+                      sv.HandleScreenChange( 'on' )
             elif power_setting == GUID_SYSTEM_AWAYMODE:
                 if data == 0: log('Exiting away mode', 3)
                 if data == 1: log('Entering away mode', 3)
@@ -1620,15 +1622,16 @@ class ScreenViewer:
         #Border on left and top to remove
         self.bl, self.bt, self.br, self.bb = 12, 31, 12, 20
         self.current_status = 'on'
-        
-        buffer_size = int(lib.init( config.settings["configuration"]["SCREENGRAB_SCALE_FACTOR"] ))
-        self.capture_height = lib.get_capture_height()
-        self.capture_width = lib.get_capture_width()
-        self.capture_components = lib.get_capture_num_components()
-        log( "Screen Capture Buffer Width : " + str( self.capture_width ), 5 )
-        log( "Screen Capture Buffer Height : " + str( self.capture_height ), 5 )
-        self.raw_buffer = np.empty((buffer_size), np.uint8)
-        
+
+    def HandleScreenChange( self, status ):
+      sv.current_status = status
+      if config.uses_video is True:
+        if sv.current_status is 'on':
+          sv.Start()
+        else:
+          sv.Stop()
+     
+      
     #Gets handle of window to view
     #wname:         Title of window to find
     #Return:        True on success; False on failure
@@ -1722,6 +1725,13 @@ class ScreenViewer:
         #    return False
         if self.cl is False:
           log( "Starting Visualight ScreenGrabber", 7 )
+          buffer_size = int(lib.init( config.settings["configuration"]["SCREENGRAB_SCALE_FACTOR"] ))
+          self.raw_buffer = np.empty((buffer_size), np.uint8)
+          self.capture_height = lib.get_capture_height()
+          self.capture_width = lib.get_capture_width()
+          self.capture_components = lib.get_capture_num_components()
+          log( "Screen Capture Buffer Width : " + str( self.capture_width ), 5 )
+          log( "Screen Capture Buffer Height : " + str( self.capture_height ), 5 )
           self.cl = True
           thrd = Thread(target = self.ScreenUpdateT)
           thrd.start()
@@ -1732,7 +1742,7 @@ class ScreenViewer:
         if self.cl is True:
           log( "Stopping Visualight ScreenGrabber", 7 )
           self.cl = False
-         
+          lib.release()
     #Thread used to capture images of screen
     def ScreenUpdateT(self):
         #Keep updating screen until terminating
