@@ -33,6 +33,7 @@ group:
       - input_number.slider_fx_r_multiplier
       - input_number.slider_fx_g_multiplier
       - input_number.slider_fx_b_multiplier
+      - input_number.slider_fx_min_level
       - input_select.led_fx_color
       - input_select.led_fx_color_flash
       - input_select.led_fx_color_low
@@ -240,6 +241,11 @@ input_number:
     #initial: 1.0
     min: 1
     max: 60
+    step: 1
+  slider_fx_min_level:
+    name: "Minimum Level"
+    min: 0
+    max: 64
     step: 1
 
 
@@ -593,7 +599,7 @@ automation:
     hide_entity: True
     trigger:
       platform: state
-      entity_id: input_number.slider_fx_decay
+      entity_id: input_number.slider_fx_width
     action:
       service: mqtt.publish
       data_template:
@@ -957,3 +963,27 @@ automation:
       data_template:
         topic: "cmnd/visualizer/monitor/effect/quality"
         payload: "{{ states('input_select.led_fx_capture_quality') }}"
+
+  - alias: Set LED FX Minimum Level Selector
+    initial_state: 'on'
+    hide_entity: True
+    trigger:
+      platform: mqtt
+      topic: "stat/visualizer/monitor/effect/min_level"
+    action:
+       service: input_number.set_value
+       data_template:
+        entity_id: input_number.slider_fx_min_level
+        value: "{{ trigger.payload | int }}"
+  
+  - alias: Set LED FX Minimum Level
+    initial_state: 'on'
+    hide_entity: True
+    trigger:
+      platform: state
+      entity_id: input_number.slider_fx_min_level
+    action:
+      service: mqtt.publish
+      data_template:
+        topic: "cmnd/visualizer/monitor/effect/min_level"
+        payload: "{{ trigger.to_state.state | int }}"

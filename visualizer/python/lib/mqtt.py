@@ -12,6 +12,7 @@ if config.settings["configuration"]["USE_LIFX"]:
 enabled = True
 
 boards = {}
+sv = None
 
 ## Because multiple systems are calling commands and setting status here (which then update ui, which may also call commands and set status),
 ## there can be feedback loops where the cmnd and status messages get out of sync causing ping-ponging between two values.
@@ -179,7 +180,11 @@ def on_message_audio_effect(client, userdata, message):
           if config.settings["configuration"]["USE_GUI"] and 'gui' in globals():
             gui.update_ui_option( eff, setting, value ) 
 
-  
+            
+def on_message_display_status(client, userdata, message):
+  log('Display Custom Topic Received : ' + str(message.payload.decode("utf-8")) )
+  sv.HandleScreenChange( str(message.payload.decode("utf-8")) )
+            
 def on_message_audio_effect_frequency_min(client, userdata, message):
   log('Effect Frequency Min Value Received : ' + str(int(message.payload.decode("utf-8"))) )
   msg = message.topic.replace( config.settings["MQTT"]["MQTT_CMND_PREFIX"], "" )
@@ -352,6 +357,7 @@ def update_mqtt_setting_status( client ):
     update_effect_setting( client, board, "high_color" )
     update_effect_setting( client, board, "saturation" )
     update_effect_setting( client, board, "contrast" )
+    update_effect_setting( client, board, "bias_min" )
     update_effect_setting( client, board, "capturefps" )
     update_effect_setting( client, board, "quality" )
     
@@ -417,10 +423,12 @@ def assign_light_group( lifx, group, singles ):
     lights = lights + lifx.get_devices_by_group( group ).get_device_list()
   return Group( lights )
         
-def initialize_mqtt( mainboards ):
+def initialize_mqtt( mainboards, screenview ):
     if not config.settings["configuration"]["USE_MQTT"]:
         return
     global boards
+    global sv
+    sv = screenview
     log( 'Initializing MQTT', 2 )
     mqtt_mutex = 0
     boards = mainboards
@@ -455,6 +463,11 @@ def initialize_mqtt( mainboards ):
     update_zones.right = 0
     update_zones.bot = 0
     update_zones.left = 0
+    
+    if config.settings["MQTT"]["MQTT_DISPLAY_CUSTOM_TOPIC"] is not None:
+        client.message_callback_add( config.settings["MQTT"]["MQTT_DISPLAY_CUSTOM_TOPIC"], on_message_display_status )
+        client.subscribe( config.settings["MQTT"]["MQTT_DISPLAY_CUSTOM_TOPIC"], 2 )
+        log('Subscribing To Display Status : ' + config.settings["MQTT"]["MQTT_DISPLAY_CUSTOM_TOPIC"], 3 )
     
     log ( 'Per Board Initialization' )
     for board in config.settings["devices"]:

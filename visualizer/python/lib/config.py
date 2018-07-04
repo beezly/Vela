@@ -14,7 +14,7 @@ def log( msg, log_level = 0 ):
 use_defaults = {"configuration": True,                           # See notes below for detailed explanation
                 "MQTT": True,
                 "LiFX": True,
-                "GUI_opts": False,
+                "GUI_opts": True,
                 "devices": True,
                 "colors": True,
                 "gradients": True,
@@ -84,6 +84,7 @@ settings = {                                                      # All settings
                      "MQTT_EFFECT_CAPTURE_FPS_TOPIC":   "capturefps",                         # Visualight Capture FPS
                      "MQTT_EFFECT_CONTRAST_TOPIC":      "contrast",                           # Visualight Contrast
                      "MQTT_EFFECT_SATURATION_TOPIC":    "saturation",                         # Visualight Saturation
+                     "MQTT_EFFECT_MIN_LEVEL_TOPIC":     "min_level",                          # Visualight Minimum Pixel Level
                      "MQTT_EFFECT_REVERSE_TOPIC":       "reverse",                            # Reverse Effect
                      "MQTT_EFFECT_FLIP_LR_TOPIC":       "flip_lr",                            # Flip L/R
                      "MQTT_EFFECT_QUALITY_TOPIC":       "quality",                            # Capture Quality
@@ -100,6 +101,7 @@ settings = {                                                      # All settings
                      "MQTT_ZONE_RIGHT_CUSTOM_TOPIC":    None,                                 # This topic is a complete MQTT topic for a custom recipient
                      "MQTT_ZONE_BOT_CUSTOM_TOPIC":      None,                                 # This topic is a complete MQTT topic for a custom recipient
                      "MQTT_ZONE_LEFT_CUSTOM_TOPIC":     None,                                 # This topic is a complete MQTT topic for a custom recipient
+                     "MQTT_DISPLAY_CUSTOM_TOPIC":       None,                                 # This topic is a complete MQTT topic for a display on/off                     
                      "MQTT_ENABLE_PAYLOAD_ON":  "on",                                         # Payload for enabling audio mode
                      "MQTT_ENABLE_PAYLOAD_OFF": "off",                                        # Payload for disabling audio mode
                      "MQTT_AVAILABLE_LIGHTS_ARRAY_TOPIC": "/lights/",                         # LED Strips opt into audio mode via this topic via IP topic and available/unavailable payload
@@ -214,7 +216,8 @@ settings = {                                                      # All settings
                                                    "contrast":2.1,                  # How much contrast we use
                                                    "sensitivity": 0.5,              # Brightness of the effect
                                                    "decay": 0.6,                    # How much interpolation to do between frames
-                                                   "roll": 34,                      # Offet for strip if it's not top left corner as the start - this will also be offset by the N_PIXEL_OFFSET, so alternatively you can set it globally there
+                                                   "bias_min": 1,                   # Minimum output level - for bias lighting, we may not want to go totally black
+                                                   "roll": 0,                       # Offet for strip if it's not top left corner as the start - this will also be offset by the N_PIXEL_OFFSET, so alternatively you can set it globally there
                                                    "capturefps": 30,                # Maximum capture speed.  Will override the global one
                                                    "quality":"Hamming",             # The quality and therby speed of scaling, selected from the quality list below
                                                    "output_zones":False,            # Send general colored zones to MQTT/LiFX - for controlling discrete lights outside of the strip
@@ -327,6 +330,7 @@ settings = {                                                      # All settings
                       "capturefps"      : "MQTT_EFFECT_CAPTURE_FPS_TOPIC",
                       "contrast"        : "MQTT_EFFECT_CONTRAST_TOPIC",
                       "saturation"      : "MQTT_EFFECT_SATURATION_TOPIC",
+                      "bias_min"        : "MQTT_EFFECT_MIN_LEVEL_TOPIC",
                       "reverse"         : "MQTT_EFFECT_REVERSE_TOPIC",
                       "flip_lr"         : "MQTT_EFFECT_FLIP_LR_TOPIC",
                       "quality"         : "MQTT_EFFECT_QUALITY_TOPIC",
@@ -362,6 +366,7 @@ settings = {                                                      # All settings
                       "capturefps"      : 1,
                       "contrast"        : 1000,
                       "saturation"      : 1000,
+                      "bias_min"        : 1,
                       "reverse"         : 1,
                       "flip_lr"         : 1,
                       "quality"         : None,

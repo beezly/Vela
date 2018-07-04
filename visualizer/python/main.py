@@ -350,7 +350,8 @@ class Visualizer():
                                                  ["gamma_b", "Gamma Blue", "float_slider", (0.1,5.0,0.1)],
                                                  ["decay", "Decay", "float_slider", (0.1,1.0,0.01)],
                                                  ["sensitivity", "Brightness", "float_slider", (0.01,2.0,0.01)],
-                                                 ["roll", "Position Offset", "slider", (0,256,1)],
+                                                 ["bias_min", "Minimum Level", "slider", (0, 64, 1)],
+                                                 ["roll", "Position Offset", "slider", (0,config.settings["devices"][self.board]["configuration"]["N_PIXELS"],1)],
                                                  ["capturefps", "Capture FPS", "slider", (1,60,1)],
                                                  ["quality", "Quality", "dropdown", config.settings["qualities"]],
                                                  ["output_zones", "Output Colors to Zones", "checkbox"]
@@ -400,7 +401,7 @@ class Visualizer():
         div = 1 / ((sv.w * 2) + (sv.h * 2)) 
         #print ( "div : " + str( div ) )
         self.pixel_w = int(pixels * ( div * sv.w ) )
-        self.pixel_h = int(pixels * ( div * sv.h ) )           
+        self.pixel_h = int( np.ceil(pixels * ( div * sv.h ) ) )           
         
             
         def _easing_func(x, length, slope=2.5):
@@ -900,6 +901,9 @@ class Visualizer():
         left = np.column_stack( np.array( imLft.getdata(), np.uint8 ) )
         output = np.concatenate( (top, right, bot, left), axis=1 )
         
+        # Clamp minimum brightness to defined value
+        output = np.clip(output, config.settings["devices"][self.board]["effect_opts"]["Visualight"]["bias_min"], 255 ).astype(int)
+        
         # Could do some audio reactive stuff here to mix with borders...
         
         # must adjust position before blending with previous
@@ -993,7 +997,7 @@ class Visualizer():
         global current_roll
         truncated_roll = int( current_roll )
         
-        width = max( 1, config.settings["devices"][self.board]["effect_opts"]["Larson Scanner"]["width"] )
+        width = int ( max( 1, config.settings["devices"][self.board]["effect_opts"]["Larson Scanner"]["width"] ) )
         decay = config.settings["devices"][self.board]["effect_opts"]["Larson Scanner"]["decay"]
         blur = config.settings["devices"][self.board]["effect_opts"]["Larson Scanner"]["blur"]
                 
@@ -1005,10 +1009,10 @@ class Visualizer():
         
         #output = np.zeros((3,config.settings["devices"][self.board]["configuration"]["N_PIXELS"]))
         start = truncated_roll
-        end = max( 0, min( config.settings["devices"][self.board]["configuration"]["N_PIXELS"] - 1 , self.prev_roll + width ) )
+        end = int ( max( 0, min( config.settings["devices"][self.board]["configuration"]["N_PIXELS"] - 1 , self.prev_roll + width ) ) )
         if truncated_roll > self.prev_roll:
           start = self.prev_roll
-          end =  max( 0, min( config.settings["devices"][self.board]["configuration"]["N_PIXELS"] - 1 , truncated_roll + width ) )
+          end =  int ( max( 0, min( config.settings["devices"][self.board]["configuration"]["N_PIXELS"] - 1 , truncated_roll + width ) ) )
         output[0][start]=config.settings["colors"][config.settings["devices"][self.board]["effect_opts"]["Larson Scanner"]["color"]][0]
         output[1][start]=config.settings["colors"][config.settings["devices"][self.board]["effect_opts"]["Larson Scanner"]["color"]][1]
         output[2][start]=config.settings["colors"][config.settings["devices"][self.board]["effect_opts"]["Larson Scanner"]["color"]][2]
@@ -1626,7 +1630,7 @@ class ScreenViewer:
     def HandleScreenChange( self, status ):
       sv.current_status = status
       if config.uses_video is True:
-        if sv.current_status is 'on':
+        if sv.current_status == 'on':
           sv.Start()
         else:
           sv.Stop()
@@ -1683,7 +1687,7 @@ class ScreenViewer:
         #      im = Image.frombytes('RGB', sct_img.size, sct_img.bgra, 'raw', 'BGRX')
         #      im = im.resize( (dest_w, dest_h) )
        
-        while cap is 0:
+        while cap is 0 and self.cl is True:
           cap = lib.capture_frame(ffi.cast("uint8_t *", self.raw_buffer.ctypes.data))
           # Don't spin too hard if we don't have updates, can eat CPU
           # This only really happens when we're running with no UI and already running fast, but
@@ -1746,8 +1750,8 @@ class ScreenViewer:
     #Thread used to capture images of screen
     def ScreenUpdateT(self):
         #Keep updating screen until terminating
-        while self.cl:
-            if self.current_status is not 'on':
+        while self.cl is True:
+            if self.current_status != 'on':
               time.sleep( 5 )
               pass
             t1 = time.time()
@@ -2088,7 +2092,7 @@ def ext_gui():
    return int_gui()
 
     
-mqtt_client = mqtt.initialize_mqtt( boards )
+mqtt_client = mqtt.initialize_mqtt( boards, sv )
 
 
 # Initialise DSP
