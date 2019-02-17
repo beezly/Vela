@@ -14,6 +14,7 @@ import lib.mqtt as mqtt
 from lib.config import log
 import random
 import asyncio
+import os
 
 from collections import defaultdict
 from PIL import Image
@@ -35,7 +36,7 @@ from PIL import ImageStat
 # Going down to 1/32nd or even 1/64 size (5 or 6), especially on a 4K+ monitor, might be worth it performance wize
 from cffi import FFI
 ffi = FFI()
-lib = ffi.dlopen('lib/WinDeskDup.dll')
+lib = ffi.dlopen(os.path.dirname(os.path.abspath(__file__))+'/lib/WinDeskDup.dll')
 ffi.cdef('''
     int init( int mip_level );
     int get_capture_height();
@@ -44,9 +45,11 @@ ffi.cdef('''
     int capture_frame(uint8_t* copy_to_buffer);
     void release();
 ''')
-  
+
+import pywintypes
 import win32gui
-import win32ui, win32con
+import win32ui
+import win32con
 from threading import Thread, Lock
 from PyQt5.QtCore import QSettings
 
@@ -2122,3 +2125,4 @@ _fps = dsp.ExpFilter(val=config.settings["configuration"]["FPS"], alpha_decay=0.
     
 # Start listening to live audio stream
 microphone.start_stream(microphone_update)
+
