@@ -436,8 +436,8 @@ def initialize_mqtt( mainboards, screenview ):
     #client.max_inflight_messages_set(16)
     if config.settings["configuration"]["MQTT_USER"]:
       client.username_pw_set(
-        config.settings["configuration"]["MQTT_USER"],
-        config.settings["configuration"]["MQTT_PASSWORD"]
+        username=config.settings["configuration"]["MQTT_USER"],
+        password=config.settings["configuration"]["MQTT_PASSWORD"]
       )
     client.connect( config.settings["configuration"]["MQTT_IP"], config.settings["configuration"]["MQTT_PORT"], 60)
     client.loop_start()
