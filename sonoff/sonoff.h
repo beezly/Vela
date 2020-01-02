@@ -106,6 +106,9 @@ typedef unsigned long power_t;              // Power (Relay) type
 #define SERIAL_POLLING         100          // Serial receive polling in ms
 #define MAX_STATUS             11           // Max number of status lines
 
+
+#define NO_EXTRA_4K_HEAP 
+
 /*
 // Removed from esp8266 core since 20171105
 #define min(a,b) ((a)<(b)?(a):(b))

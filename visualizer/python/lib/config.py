@@ -40,7 +40,9 @@ settings = {                                                      # All settings
                      "USE_MQTT": True,                                                        # If true, take/issue commands via MQTT
                      "USE_MQTT_LED_STATE" : False,                                            # If true will set LED state to an MQTT topic.  Not really fast enough for realtime audio, but could be useful for other stuff?  Deprecated...
                      "MQTT_IP": "YOUR_MQTT_ADDRESS",                                          # MQTT IP
-                     "MQTT_PORT": 1883,                                                       # MQTT Port
+                     "MQTT_PORT": 1883,        
+                     "MQTT_USER": "YOUR_MQTT_USER",
+                     "MQTT_PASSWORD": "YOUR_MQTT_PASS",                                               # MQTT Port
                      "USE_LIFX": False,                                                       # Should we broadcast visualight zones to lifx?
                      "MULTICAST_UDP_IP": "225.255.255.240",                                   # Multicast UDP IP
                      "SCREENGRAB_MAX_FPS": 30,                                                # Screengrabbing will be capped at this framerate for performance reasons
